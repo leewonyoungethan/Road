@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { clamp, lerp, smoothstep } from './noise.js';
 
-const SKY_PARAMS = { turbidity: 3.2, rayleigh: 1.2, mieCoefficient: 0.003, mieDirectionalG: 0.84 };
+const SKY_PARAMS = { turbidity: 2.4, rayleigh: 2.4, mieCoefficient: 0.004, mieDirectionalG: 0.82 };
 
 export class Atmosphere {
   constructor(renderer, scene) {
@@ -162,9 +162,9 @@ export class Atmosphere {
       // moon
       this.lightDir.set(-this.sunDir.x, Math.max(0.35, -this.sunDir.y), -this.sunDir.z).normalize();
       this.sun.color.setRGB(0.55, 0.65, 1.0);
-      this.sun.intensity = 0.35 * this.night;
+      this.sun.intensity = 0.15 + 0.45 * this.night;
     }
-    this.hemi.intensity = 0.06 + this.night * 0.45 + (1 - day) * 0.1;
+    this.hemi.intensity = 0.08 + this.night * 0.7 + (1 - day) * 0.35;
     this.hemi.color.setRGB(lerp(0.55, 0.25, this.night), lerp(0.65, 0.32, this.night), lerp(0.85, 0.6, this.night));
 
     // shadow box follows the focus point, snapped to texels to avoid shimmer

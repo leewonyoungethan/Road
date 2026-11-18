@@ -229,7 +229,7 @@ export class Car {
     // lights
     const n = night;
     this.headMat.emissiveIntensity = 0.4 + n * 6;
-    for (const b of this.beams) b.intensity = n * 60;
+    for (const b of this.beams) b.intensity = n * 220;
     this.tailMat.emissiveIntensity = (this.braking ? 5 : 0.6) + n * 1.5;
     this.tailLight.intensity = (this.braking ? 3 : 0) + n * 1.2;
 

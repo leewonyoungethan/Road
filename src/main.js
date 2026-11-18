@@ -112,8 +112,8 @@ let camMode = 0; // 0 chase, 1 hood, 2 cinematic, 3 top
 const CAM_NAMES = ['추격', '보닛', '시네마틱', '항공'];
 let timeFlow = false;
 let hudHidden = false;
-const TIME_PRESETS = [6.6, 9.5, 13, 16.6, 18.15, 19.1, 23.5];
-let presetIdx = 3;
+const TIME_PRESETS = [6.4, 9.5, 13, 16.4, 17.55, 18.05, 23.5];
+let presetIdx = 4;
 atmo.setTime(TIME_PRESETS[presetIdx]);
 const CLOUDS = [0.2, 0.38, 0.6, 0.85];
 let cloudIdx = 1;
