@@ -1,56 +1,84 @@
-// Tiny synthesized engine + wind audio
+// Synthesised car audio: a soft multi-harmonic engine hum, road/tyre roar, wind and rain.
 export class CarAudio {
-  constructor() { this.ctx = null; this.muted = false; }
+  constructor() { this.ctx = null; this.muted = false; this.volume = 0.5; }
 
   start() {
     if (this.ctx) { this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC();
-    this.master = ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.6;
-    this.master.connect(ctx.destination);
 
-    // engine: two detuned oscillators -> lowpass
-    this.o1 = ctx.createOscillator(); this.o1.type = 'sawtooth';
-    this.o2 = ctx.createOscillator(); this.o2.type = 'square';
-    this.o3 = ctx.createOscillator(); this.o3.type = 'sine';
-    this.lp = ctx.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.Q.value = 2.5;
-    this.eg = ctx.createGain(); this.eg.gain.value = 0.0;
-    const g2 = ctx.createGain(); g2.gain.value = 0.35;
-    const g3 = ctx.createGain(); g3.gain.value = 0.8;
-    this.o1.connect(this.lp); this.o2.connect(g2).connect(this.lp); this.o3.connect(g3).connect(this.lp);
-    this.lp.connect(this.eg).connect(this.master);
-    this.o1.start(); this.o2.start(); this.o3.start();
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.ratio.value = 3;
+    this.master = ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : this.volume;
+    this.master.connect(comp).connect(ctx.destination);
 
-    // wind / road noise
-    const len = ctx.sampleRate * 2;
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
+    // ---- engine: custom harmonic wave (warm, not buzzy) ----
+    const real = new Float32Array(12), imag = new Float32Array(12);
+    const amps = [0, 1, 0.55, 0.42, 0.18, 0.12, 0.07, 0.05, 0.03, 0.02, 0.015, 0.01];
+    for (let i = 1; i < 12; i++) imag[i] = amps[i];
+    const wave = ctx.createPeriodicWave(real, imag);
+    this.eng = ctx.createOscillator(); this.eng.setPeriodicWave(wave);
+    this.sub = ctx.createOscillator(); this.sub.type = 'sine';
+    this.engLP = ctx.createBiquadFilter(); this.engLP.type = 'lowpass'; this.engLP.Q.value = 0.7;
+    this.engGain = ctx.createGain(); this.engGain.gain.value = 0;
+    const subGain = ctx.createGain(); subGain.gain.value = 0.7;
+    // slow wobble so it does not sound like a test tone
+    this.lfo = ctx.createOscillator(); this.lfo.frequency.value = 7;
+    const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 1.5;
+    this.lfo.connect(lfoAmt).connect(this.eng.frequency);
+    this.eng.connect(this.engLP); this.sub.connect(subGain).connect(this.engLP);
+    this.engLP.connect(this.engGain).connect(this.master);
+    this.eng.start(); this.sub.start(); this.lfo.start();
+
+    // ---- noise sources ----
+    const len = ctx.sampleRate * 3;
+    const white = ctx.createBuffer(1, len, ctx.sampleRate), brown = ctx.createBuffer(1, len, ctx.sampleRate);
+    const wd = white.getChannelData(0), bd = brown.getChannelData(0);
     let last = 0;
-    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
-    this.noise = ctx.createBufferSource(); this.noise.buffer = buf; this.noise.loop = true;
-    this.bp = ctx.createBiquadFilter(); this.bp.type = 'bandpass'; this.bp.Q.value = 0.6;
-    this.ng = ctx.createGain(); this.ng.gain.value = 0;
-    this.noise.connect(this.bp).connect(this.ng).connect(this.master);
-    this.noise.start();
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1; wd[i] = w;
+      last = (last + 0.02 * w) / 1.02; bd[i] = last * 3.5;
+    }
+    const loop = (buf) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(); return s; };
+
+    // road / tyre roar
+    this.roadLP = ctx.createBiquadFilter(); this.roadLP.type = 'lowpass'; this.roadLP.frequency.value = 300;
+    this.roadGain = ctx.createGain(); this.roadGain.gain.value = 0;
+    loop(brown).connect(this.roadLP).connect(this.roadGain).connect(this.master);
+
+    // wind
+    this.windBP = ctx.createBiquadFilter(); this.windBP.type = 'bandpass'; this.windBP.Q.value = 0.5;
+    this.windGain = ctx.createGain(); this.windGain.gain.value = 0;
+    loop(white).connect(this.windBP).connect(this.windGain).connect(this.master);
+
+    // rain hiss + low patter
+    this.rainHP = ctx.createBiquadFilter(); this.rainHP.type = 'highpass'; this.rainHP.frequency.value = 1200;
+    this.rainLP = ctx.createBiquadFilter(); this.rainLP.type = 'lowpass'; this.rainLP.frequency.value = 7000;
+    this.rainGain = ctx.createGain(); this.rainGain.gain.value = 0;
+    loop(white).connect(this.rainHP).connect(this.rainLP).connect(this.rainGain).connect(this.master);
   }
 
   setMuted(m) {
     this.muted = m;
-    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.6, this.ctx.currentTime, 0.1);
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : this.volume, this.ctx.currentTime, 0.1);
   }
 
-  update(rpm, throttle, speed, offroad) {
+  update(rpm, throttle, speed, offroad, rain = 0) {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const f = rpm / 60 * 2; // 4-cyl firing frequency
-    this.o1.frequency.setTargetAtTime(f, t, 0.05);
-    this.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
-    this.o3.frequency.setTargetAtTime(f * 0.25, t, 0.05);
-    this.lp.frequency.setTargetAtTime(300 + throttle * 900 + rpm * 0.12, t, 0.08);
-    this.eg.gain.setTargetAtTime(0.06 + throttle * 0.07, t, 0.1);
-    const v = Math.abs(speed);
-    this.bp.frequency.setTargetAtTime(400 + v * 25 + (offroad ? 300 : 0), t, 0.2);
-    this.ng.gain.setTargetAtTime(Math.min(0.5, v * v * 0.00018 + (offroad ? 0.15 * Math.min(1, v / 8) : 0)), t, 0.2);
+    const t = this.ctx.currentTime, T = 0.08;
+    const f = (rpm / 60) * 2; // 4-cylinder firing frequency
+    this.eng.frequency.setTargetAtTime(f, t, T);
+    this.sub.frequency.setTargetAtTime(f * 0.5, t, T);
+    this.engLP.frequency.setTargetAtTime(180 + throttle * 700 + rpm * 0.08, t, T);
+    this.engGain.gain.setTargetAtTime(0.05 + throttle * 0.06, t, 0.15);
+
+    const v = Math.min(Math.abs(speed), 80); // above ~290 km/h the sound saturates
+    this.roadLP.frequency.setTargetAtTime(120 + v * 6 + (offroad ? 400 : 0), t, 0.2);
+    this.roadGain.gain.setTargetAtTime(Math.min(0.35, v * 0.006) + (offroad ? 0.18 * Math.min(1, v / 6) : 0), t, 0.2);
+    this.windBP.frequency.setTargetAtTime(250 + v * 14, t, 0.3);
+    this.windGain.gain.setTargetAtTime(Math.min(0.22, v * v * 0.00006), t, 0.3);
+    this.rainGain.gain.setTargetAtTime(Math.min(0.12, rain * 0.08), t, 0.5);
   }
 }

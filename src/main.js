@@ -8,16 +8,18 @@ import { World, STEP, LANE, CHUNK } from './world.js';
 import { Atmosphere } from './sky.js';
 import { Car, CAR_COLORS } from './car.js';
 import { CarAudio } from './audio.js';
+import { Precipitation } from './weather.js';
 import { clamp, lerp, mulberry32 } from './noise.js';
 
 // ---------------- settings ----------------
 const isTouch = matchMedia('(pointer: coarse)').matches;
+const DPR = devicePixelRatio || 1;
 const QUALITY = {
-  high: { name: '높음', pixelRatio: Math.min(devicePixelRatio, 2), shadows: true, grass: true, grassCount: 10000, farSegs: 16, view: 7, bloom: true, msaa: 4 },
-  medium: { name: '보통', pixelRatio: Math.min(devicePixelRatio, 1.5), shadows: true, grass: true, grassCount: 6000, farSegs: 16, view: 6, bloom: true, msaa: 2 },
-  low: { name: '낮음', pixelRatio: 1, shadows: false, grass: false, grassCount: 0, farSegs: 12, view: 5, bloom: false, msaa: 0 },
+  high: { name: '높음', pixelRatio: Math.min(DPR, 1.75), shadows: true, shadowSize: 2048, grass: true, grassCount: 8000, farSegs: 16, view: 7, bloom: true, msaa: 4 },
+  medium: { name: '보통', pixelRatio: Math.min(DPR, 1.25), shadows: true, shadowSize: 1024, grass: true, grassCount: 4000, farSegs: 16, view: 6, bloom: true, msaa: 2 },
+  low: { name: '낮음', pixelRatio: Math.min(DPR, 1), shadows: false, shadowSize: 512, grass: false, grassCount: 0, farSegs: 12, view: 5, bloom: false, msaa: 0 },
 };
-let qualityKey = (() => { try { return localStorage.getItem('wr-quality'); } catch { return null; } })() || (isTouch ? 'low' : 'high');
+let qualityKey = (() => { try { return localStorage.getItem('wr-quality'); } catch { return null; } })() || (isTouch ? 'low' : 'medium');
 if (!QUALITY[qualityKey]) qualityKey = 'high';
 const quality = { ...QUALITY[qualityKey] };
 
@@ -40,6 +42,8 @@ const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 20
 
 const atmo = new Atmosphere(renderer, scene);
 atmo.sun.castShadow = quality.shadows;
+atmo.sun.shadow.mapSize.set(quality.shadowSize, quality.shadowSize);
+const precip = new Precipitation(scene);
 
 let world = new World(seed, scene, quality);
 const car = new Car(scene, world);
@@ -115,8 +119,10 @@ let hudHidden = false;
 const TIME_PRESETS = [6.4, 9.5, 13, 16.4, 17.55, 18.05, 23.5];
 let presetIdx = 4;
 atmo.setTime(TIME_PRESETS[presetIdx]);
-const CLOUDS = [0.2, 0.38, 0.6, 0.85];
-let cloudIdx = 1;
+const WEATHERS = ['clear', 'fair', 'cloudy', 'rain', 'storm', 'snow'];
+const WEATHER_NAMES = { clear: '맑음', fair: '구름 조금', cloudy: '흐림', rain: '비', storm: '폭우', snow: '눈' };
+let weatherIdx = 1;
+atmo.setWeather(WEATHERS[weatherIdx]);
 let colorIdx = 0;
 const audio = new CarAudio();
 
@@ -134,8 +140,8 @@ addEventListener('keydown', (e) => {
     case 'KeyK': cycleColor(); break;
     case 'KeyL': timeFlow = !timeFlow; toast(timeFlow ? '시간 흐름 켜짐' : '시간 흐름 꺼짐'); break;
     case 'KeyN': newWorld(); break;
-    case 'Equal': case 'NumpadAdd': car.autoSpeed = clamp(car.autoSpeed + 2.78, 8.3, 44); toast(`자동 주행 속도 ${Math.round(car.autoSpeed * 3.6)} km/h`); break;
-    case 'Minus': case 'NumpadSubtract': car.autoSpeed = clamp(car.autoSpeed - 2.78, 8.3, 44); toast(`자동 주행 속도 ${Math.round(car.autoSpeed * 3.6)} km/h`); break;
+    case 'Equal': case 'NumpadAdd': setSpeedKmh(speedKmh * 1.15); break;
+    case 'Minus': case 'NumpadSubtract': setSpeedKmh(speedKmh / 1.15); break;
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   // any manual drive key takes over from autopilot
@@ -175,7 +181,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   speed: $('speed'), gear: $('gear'), dist: $('dist'), clock: $('clock'), mode: $('mode'),
   auto: $('btn-auto'), cam: $('btn-cam'), time: $('btn-time'), sound: $('btn-sound'), qual: $('btn-quality'),
-  clouds: $('btn-clouds'), color: $('btn-color'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
+  clouds: $('btn-clouds'), slider: $('speed-slider'), speedSet: $('speed-set'), color: $('btn-color'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
 };
 function toast(msg) {
   ui.toast.textContent = msg; ui.toast.classList.add('show');
@@ -184,7 +190,11 @@ function toast(msg) {
 function toggleAuto() { autoDrive = !autoDrive; refreshUI(); toast(autoDrive ? '자동 주행 켜짐 — 편하게 감상하세요' : '수동 주행 — W/A/S/D 또는 방향키'); }
 function cycleCam() { camMode = (camMode + 1) % CAM_NAMES.length; cine.idx = -1; refreshUI(); toast(`카메라: ${CAM_NAMES[camMode]}`); }
 function cycleTime() { presetIdx = (presetIdx + 1) % TIME_PRESETS.length; timeTarget = TIME_PRESETS[presetIdx]; refreshUI(); }
-function cycleClouds() { cloudIdx = (cloudIdx + 1) % CLOUDS.length; atmo.cloudCover = CLOUDS[cloudIdx]; toast(['맑음', '구름 조금', '구름 많음', '흐림'][cloudIdx]); }
+function cycleClouds() { setWeather((weatherIdx + 1) % WEATHERS.length); }
+function setWeather(i) {
+  weatherIdx = i; atmo.setWeather(WEATHERS[i]);
+  toast(`날씨: ${WEATHER_NAMES[WEATHERS[i]]}`); refreshUI();
+}
 function cycleColor() { colorIdx = (colorIdx + 1) % CAR_COLORS.length; car.setColor(CAR_COLORS[colorIdx]); }
 function toggleMute() { audio.setMuted(!audio.muted); refreshUI(); }
 function resetCar() { car.placeOnRoad(car.idx + 2); toast('도로로 복귀'); }
@@ -205,6 +215,7 @@ function refreshUI() {
   ui.sound.querySelector('span').textContent = audio.muted ? '소리 꺼짐' : '소리 켜짐';
   ui.qual.querySelector('span').textContent = `화질 ${quality.name}`;
   ui.mode.textContent = autoDrive ? 'AUTO' : 'MANUAL';
+  ui.clouds.querySelector('span').textContent = WEATHER_NAMES[WEATHERS[weatherIdx]];
   document.body.classList.toggle('manual', !autoDrive);
 }
 ui.auto.onclick = toggleAuto; ui.cam.onclick = cycleCam; ui.time.onclick = cycleTime; ui.sound.onclick = toggleMute;
@@ -226,7 +237,7 @@ addEventListener('resize', () => {
 });
 
 // ---------------- camera ----------------
-const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), camOff = new THREE.Vector3(0, 3, -8);
 let camYaw = 0, camInit = false;
 const cine = { idx: -1, pos: new THREE.Vector3(), tmp: { x: 0, y: 0, z: 0, fx: 0, fz: 1 } };
 const v3 = new THREE.Vector3();
@@ -247,9 +258,12 @@ function updateCamera(dt) {
     v3.set(cp.x - Math.sin(a) * dist, cp.y + height, cp.z - Math.cos(a) * dist);
     const gmin = world.groundAt(v3.x, v3.z) + 0.8;
     if (v3.y < gmin) v3.y = gmin;
-    camPos.lerp(v3, 1 - Math.exp(-dt * 10));
+    v3.sub(cp);
+    camOff.lerp(v3, 1 - Math.exp(-dt * 10));
+    camPos.copy(cp).add(camOff);
     camLook.set(cp.x + fx * 4, cp.y + 1.1, cp.z + fz * 4);
-    fov = 58 + Math.min(14, Math.abs(car.speed) * 0.25);
+    const sp = Math.abs(car.speed);
+    fov = 58 + 14 * Math.min(1, sp / 56) + 18 * Math.min(1, Math.max(0, sp - 56) / 700);
     camera.position.copy(camPos);
     camera.lookAt(camLook);
   } else if (camMode === 1) {
@@ -260,8 +274,8 @@ function updateCamera(dt) {
     fov = 68;
   } else if (camMode === 2) {
     // roadside cinematic shots
-    if (cine.idx < 0 || car.idx > cine.idx + 12 || car.idx < cine.idx - 140) {
-      cine.idx = car.idx + 40 + Math.floor(Math.random() * 40);
+    if (cine.idx < 0 || car.idx > cine.idx + 12 + Math.abs(car.speed) * 0.15 || car.idx < cine.idx - 140 * Math.max(1, Math.abs(car.speed) / 25)) {
+      cine.idx = car.idx + Math.floor((40 + Math.random() * 40) * Math.max(1, Math.abs(car.speed) / 25));
       const s = world.sample(cine.idx, cine.tmp);
       const side = Math.random() < 0.5 ? -1 : 1;
       const off = side * (9 + Math.random() * 14);
@@ -276,7 +290,9 @@ function updateCamera(dt) {
   } else {
     const a = camYaw + orbit;
     v3.set(cp.x - Math.sin(a) * 28, cp.y + 26 + orbitPitch * 20, cp.z - Math.cos(a) * 28);
-    camPos.lerp(v3, 1 - Math.exp(-dt * 4));
+    v3.sub(cp);
+    camOff.lerp(v3, 1 - Math.exp(-dt * 4));
+    camPos.copy(cp).add(camOff);
     camera.position.copy(camPos);
     camLook.set(cp.x + fx * 14, cp.y, cp.z + fz * 14);
     camera.lookAt(camLook);
@@ -290,12 +306,29 @@ function updateCamera(dt) {
 const START_IDX = 160;
 world.ensureRoad(START_IDX * STEP + quality.view * CHUNK + 400);
 car.placeOnRoad(START_IDX, LANE);
-car.autoSpeed = 22.2;
+let speedKmh = (() => { try { return parseFloat(localStorage.getItem('wr-speed')); } catch { return NaN; } })();
+if (!Number.isFinite(speedKmh)) speedKmh = 80;
+function setSpeedKmh(v, silent) {
+  speedKmh = clamp(Math.round(v), 20, 4000);
+  car.autoSpeed = speedKmh / 3.6;
+  ui.speedSet.textContent = speedKmh;
+  ui.slider.value = String(Math.log(speedKmh / 20) / Math.log(200) * 1000);
+  try { localStorage.setItem('wr-speed', String(speedKmh)); } catch {}
+  if (!silent) toast(`목표 속도 ${speedKmh} km/h`);
+}
+ui.slider.addEventListener('input', () => setSpeedKmh(20 * Math.pow(200, ui.slider.value / 1000), true));
+ui.slider.addEventListener('pointerdown', (e) => e.stopPropagation());
+document.querySelectorAll('[data-speed]').forEach((b) => b.addEventListener('click', () => setSpeedKmh(+b.dataset.speed)));
+setSpeedKmh(speedKmh, true);
 
 let loaded = false;
 let timeTarget = atmo.time;
 const clock = new THREE.Clock();
-let fpsAcc = 0, fpsN = 0, lowFps = 0;
+let fpsAcc = -3, fpsN = 0, lowFps = 0, dynScale = 1;
+function applyScale() {
+  const pr = quality.pixelRatio * dynScale;
+  renderer.setPixelRatio(pr); composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight);
+}
 
 function frame() {
   requestAnimationFrame(frame);
@@ -303,6 +336,7 @@ function frame() {
 
   if (!loaded) {
     const rem = world.update(car.pos.x, car.pos.z, car.idx, 60, quality.view);
+    precip.update(0.016, camera, 0, 0, 1, renderer.domElement.height);
     const total = world.chunks.size + rem;
     ui.bar.style.width = `${(world.chunks.size / Math.max(total, 1)) * 100}%`;
     if (rem === 0) { loaded = true; ui.loading.classList.add('done'); }
@@ -325,8 +359,14 @@ function frame() {
 
   car.update(dt, input, autoDrive && playing ? true : autoDrive, atmo.night || 0);
   world.sharedUniforms.uTime.value += dt;
-  world.update(car.pos.x, car.pos.z, car.idx, 5, quality.view);
+  {
+    const sp = Math.max(0, car.speed), [fx, fz] = car.dir, ahead = Math.min(sp * 0.7, 520);
+    world.update(car.pos.x + fx * ahead, car.pos.z + fz * ahead, car.idx, 5, quality.view, sp > 140 ? 2 : sp > 70 ? 1 : 0);
+  }
   atmo.update(dt, camera, car.group.position);
+  world.sharedUniforms.uSnow.value = atmo.w.snowCover * 0.95;
+  world.setWetness(atmo.w.wet);
+  precip.update(dt, camera, atmo.w.rain, atmo.w.snow, atmo.light, renderer.domElement.height);
   updateCamera(dt);
 
   water.position.x = Math.round(camera.position.x / WATER_TILE) * WATER_TILE;
@@ -335,7 +375,7 @@ function frame() {
   waterNormals.offset.set(wt * 0.004, wt * 0.002);
   waterNormals2.offset.set(-wt * 0.0015, wt * 0.003);
 
-  audio.update(car.rpm, car.throttle || 0, car.speed, !car.onRoad);
+  audio.update(car.rpm, car.throttle || 0, car.speed, !car.onRoad, atmo.w.rain);
 
   // HUD
   const kmh = Math.abs(car.speed) * 3.6;
@@ -349,13 +389,16 @@ function frame() {
   composer.render();
 
   // adaptive hint
-  fpsAcc += dt; fpsN++;
-  if (fpsAcc > 4) {
+  fpsAcc += dt; if (fpsAcc > 0) fpsN++; else fpsN = 0;
+  if (fpsAcc > 2) {
     const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0;
-    if (fps < 28 && qualityKey !== 'low') { lowFps++; if (lowFps === 2) toast('프레임이 낮아요 — 화질 버튼으로 낮출 수 있어요'); }
+    // dynamic resolution: trade sharpness for smoothness automatically
+    if (fps < 45 && dynScale > 0.55) { dynScale = Math.max(0.55, dynScale - 0.15); applyScale(); }
+    else if (fps > 58 && dynScale < 1) { dynScale = Math.min(1, dynScale + 0.1); applyScale(); }
+    if (fps < 25 && dynScale <= 0.56 && qualityKey !== 'low') { lowFps++; if (lowFps === 2) toast('여전히 느리면 화질 버튼으로 낮춰보세요'); }
   }
 }
 frame();
 
 // expose for debugging
-window.__wr = { world, car, atmo, camera, renderer, scene, setTime: (t) => { timeTarget = t; atmo.setTime(t); } };
+window.__wr = { world, car, atmo, camera, renderer, scene, setTime: (t) => { timeTarget = t; atmo.setTime(t); }, setWeather, setSpeedKmh, precip };

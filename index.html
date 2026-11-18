@@ -69,6 +69,15 @@
   #seedbox { top: 22px; left: 28px; font-size: 12px; color: var(--muted); letter-spacing: .06em; text-shadow: 0 1px 8px rgba(0,0,0,.5); }
   #seedbox strong { color: var(--text); font-weight: 800; letter-spacing: -0.02em; font-size: 15px; margin-right: 8px; }
 
+  #speedctl { right: 22px; bottom: 26px; width: 250px; padding: 12px 14px; border-radius: 14px; background: var(--glass); border: 1px solid var(--glass-b);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); font-size: 12px; }
+  #speedctl .lbl { display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); }
+  #speedctl .lbl b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  #speedctl input { width: 100%; margin: 10px 0 8px; accent-color: var(--accent); }
+  #speedctl .presets { display: flex; gap: 4px; }
+  #speedctl .presets button { flex: 1; padding: 4px 0; border-radius: 7px; border: 1px solid var(--glass-b); background: rgba(255,255,255,0.06);
+    color: var(--text); font: 600 11px 'Inter', sans-serif; cursor: pointer; }
+  #speedctl .presets button:hover { background: rgba(255,255,255,0.18); }
   #toast { position: fixed; left: 50%; top: 16%; transform: translate(-50%, -8px); padding: 10px 18px; border-radius: 999px;
     background: var(--glass); border: 1px solid var(--glass-b); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     font-size: 14px; opacity: 0; transition: opacity .3s, transform .3s; z-index: 8; pointer-events: none; white-space: nowrap; }
@@ -91,6 +100,7 @@
     #menu { top: 10px; right: 10px; gap: 6px; }
     #menu button { padding: 7px 10px; font-size: 12px; }
     #seedbox { display: none; }
+    #speedctl { right: auto; left: 50%; transform: translateX(-50%); top: 52px; bottom: auto; width: 230px; padding: 8px 10px; }
   }
 </style>
 <script type="importmap">
@@ -112,8 +122,8 @@
     <b>E</b><span>자동 주행 켜기 / 끄기</span>
     <b>C</b><span>카메라 전환 · 마우스 드래그로 둘러보기</span>
     <b>T · L</b><span>시간대 변경 · 시간 흐름</span>
-    <b>P · K</b><span>날씨(구름) · 차 색상</span>
-    <b>+ / −</b><span>자동 주행 속도</span>
+    <b>P · K</b><span>날씨 (맑음 · 흐림 · 비 · 폭우 · 눈) · 차 색상</span>
+    <b>+ / −</b><span>목표 속도 (최대 4000 km/h)</span>
     <b>R · N · H</b><span>도로 복귀 · 새 세계 · HUD 숨기기</span>
   </div>
 </div>
@@ -137,6 +147,12 @@
   <div><span id="mode">AUTO</span></div>
   <div class="row"><span id="speed">0</span><span class="unit">km/h</span></div>
   <div class="meta"><span>기어 <b id="gear">N</b></span><span><b id="dist">0.0</b> km</span><span><b id="clock">17:00</b></span></div>
+</div>
+
+<div class="hud" id="speedctl">
+  <div class="lbl"><span>목표 속도</span><b><span id="speed-set">80</span> km/h</b></div>
+  <input id="speed-slider" type="range" min="0" max="1000" step="1" value="300" aria-label="목표 속도" />
+  <div class="presets"><button data-speed="60">60</button><button data-speed="100">100</button><button data-speed="200">200</button><button data-speed="500">500</button><button data-speed="1000">1000</button><button data-speed="4000">4000</button></div>
 </div>
 
 <div id="touch" class="hud">

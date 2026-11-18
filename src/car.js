@@ -5,6 +5,7 @@ import { ROAD_HALF, SHOULDER, LANE, STEP } from './world.js';
 const WB = 2.62;      // wheelbase
 const TRACK = 1.58;
 const WR = 0.34;      // wheel radius
+const RAIL = 55;      // m/s (~200 km/h): above this the car locks to the road
 
 export const CAR_COLORS = [0xb3121f, 0x1f4fa8, 0xe8e6e0, 0x1b1c1f, 0x2f6b4a, 0xe39a1c];
 
@@ -121,12 +122,13 @@ export class Car {
     this.pos.set(s.x - s.fz * lat, s.y, s.z + s.fx * lat);
     this.yaw = s.heading;
     this.speed = 0; this.steer = 0; this.idx = Math.floor(i);
-    this.y = s.y; this.vy = 0;
+    this.y = s.y; this.vy = 0; this.rail = false;
   }
 
   get dir() { return [Math.sin(this.yaw), Math.cos(this.yaw)]; }
 
   update(dt, input, auto, night) {
+    this._night = night;
     const w = this.world;
     const [fx, fz] = this.dir;
     const rxv = -fz, rzv = fx;
@@ -149,10 +151,11 @@ export class Car {
       const delta = Math.atan2(2 * WB * rightC, ld2);
       steerIn = clamp(delta / 0.5, -1, 1);
       const k = w.curvatureAhead(loc.i, 60 + Math.abs(this.speed) * 3.2);
-      const vmax = Math.min(this.autoSpeed, Math.sqrt(2.6 / Math.max(k, 1e-4)));
+      const vmax = this.autoSpeed > RAIL ? this.autoSpeed : Math.min(this.autoSpeed, Math.sqrt(2.6 / Math.max(k, 1e-4)));
       const err = vmax - this.speed;
-      if (err > 0) throttle = clamp(err * 0.35, 0, 1);
-      else brake = clamp(-err * 0.12, 0, 1);
+      const sc = Math.max(1, this.autoSpeed / 30);
+      if (err > 0) throttle = clamp(err * 0.35 / sc, 0, 1);
+      else brake = clamp(-err * 0.12 / sc, 0, 1);
       if (input.brake) { brake = 1; throttle = 0; }
     } else {
       throttle = input.throttle; brake = input.brake; steerIn = input.steer;
@@ -165,18 +168,21 @@ export class Car {
     this.steer = lerp(this.steer, targetSteer, 1 - Math.exp(-rate * dt));
 
     // longitudinal dynamics
-    const maxV = this.onRoad ? 58 : 20;
+    const limit = this.autoSpeed;               // the speed setting (m/s) caps manual driving too
+    const maxV = this.onRoad ? limit : Math.min(20, limit);
+    const boost = Math.max(0, limit - 50) * 0.32; // so very high limits are reached in a few seconds
     let a = 0;
     if (throttle > 0) {
       if (this.speed < -0.5) a += 10 * throttle;
-      else a += throttle * 7.2 * clamp(1 - this.speed / maxV, 0, 1) + 0.6 * throttle;
+      else a += throttle * (7.2 + boost) * clamp(1 - this.speed / maxV, 0, 1) + 0.6 * throttle * (this.speed < maxV ? 1 : 0);
     }
+    if (this.speed > maxV + 1) a -= (this.speed - maxV) * 1.5;
     if (brake > 0) {
-      if (this.speed > 0.3) a -= brake * 13;
+      if (this.speed > 0.3) a -= brake * (13 + boost * 1.2);
       else if (!auto) a -= brake * 4; // reverse
       else this.speed *= 0.9;
     }
-    a -= 0.0011 * this.speed * Math.abs(this.speed);
+    a -= 0.0011 * this.speed * Math.abs(this.speed) * Math.min(1, (58 / Math.max(limit, 1)) ** 2);
     a -= Math.sign(this.speed) * (this.onRoad ? 0.18 : 1.8);
     if (!this.onRoad) a -= this.speed * 0.25;
     a -= 9.81 * Math.sin(this.pitch) * 0.9;
@@ -186,6 +192,32 @@ export class Car {
     if (Math.sign(prev) !== Math.sign(this.speed) && throttle === 0 && brake === 0) this.speed = 0;
     if (Math.abs(this.speed) < 0.05 && throttle === 0 && brake === 0) this.speed = 0;
     this.braking = brake > 0.05 && this.speed > 0.5;
+    this.throttleIn = throttle;
+
+    // above RAIL speed the car follows the road like a rail (steering only shifts lanes)
+    if (!this.rail && this.speed > RAIL && this.onRoad) {
+      this.rail = true; this.railS = loc.i + loc.t; this.railLat = clamp(this.lat, -ROAD_HALF + 0.9, ROAD_HALF - 0.9);
+    } else if (this.rail && this.speed < RAIL - 6) this.rail = false;
+
+    if (this.rail) {
+      if (auto) this.railLat = lerp(this.railLat, LANE, 1 - Math.exp(-2 * dt));
+      else this.railLat = clamp(this.railLat + steerIn * dt * 5, -ROAD_HALF + 0.9, ROAD_HALF - 0.9);
+      this.railS += (this.speed * dt) / STEP;
+      const sN = w.sample(this.railS, this.tmp);
+      const sx = sN.x, sz = sN.z, sy = sN.y, sfx = sN.fx, sfz = sN.fz, sh = sN.heading;
+      const ahead = w.sample(this.railS + 1, this.tmp);
+      this.pos.x = sx - sfz * this.railLat; this.pos.z = sz + sfx * this.railLat;
+      let dyaw = sh - this.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+      this.yaw += dyaw * (1 - Math.exp(-25 * dt));
+      this.steer = lerp(this.steer, steerIn * 0.03, 1 - Math.exp(-8 * dt));
+      this.idx = Math.floor(this.railS);
+      this.dist += this.speed * dt;
+      this.y = sy + 0.04; this.vy = 0;
+      this.pitch = lerp(this.pitch, Math.atan2(ahead.y - sy, STEP), 1 - Math.exp(-10 * dt));
+      this.roll = lerp(this.roll, 0, 1 - Math.exp(-10 * dt));
+      this._finishPose(dt, a, 0);
+      return;
+    }
 
     // yaw / move
     this.yaw -= (this.speed * Math.tan(this.steer) / WB) * dt;
@@ -212,6 +244,11 @@ export class Car {
     const latAcc = this.speed * this.speed * Math.tan(this.steer) / WB;
     this.pitch = lerp(this.pitch, tPitch, 1 - Math.exp(-10 * dt));
     this.roll = lerp(this.roll, tRoll, 1 - Math.exp(-10 * dt));
+    this._finishPose(dt, a, latAcc);
+  }
+
+  _finishPose(dt, a, latAcc) {
+    const night = this._night, throttle = this.throttleIn;
     const bodyRoll = clamp(-latAcc * 0.006, -0.06, 0.06);
     const bodyPitch = clamp(-a * 0.004, -0.04, 0.04);
 
@@ -220,7 +257,7 @@ export class Car {
     this.body.rotation.set(bodyPitch, 0, bodyRoll);
     this.body.position.y = Math.sin(this.dist * 0.9) * 0.004 * (this.onRoad ? 0.3 : 3);
 
-    this.wheelRot += (this.speed * dt) / WR;
+    this.wheelRot = (this.wheelRot + (this.speed * dt) / WR) % (Math.PI * 2);
     for (const wh of this.wheels) {
       wh.spin.rotation.x = this.wheelRot;
       wh.pivot.rotation.y = wh.front ? -this.steer : 0;

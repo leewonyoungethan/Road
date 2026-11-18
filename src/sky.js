@@ -52,9 +52,13 @@ export class Atmosphere {
     this._makeStars();
 
     this.time = 17.2;
-    this.cloudCover = 0.38;
-    this._lastEnvTime = -100;
-    this._probeTimer = 0;
+    this.w = { cover: 0.38, overcast: 0, fogMul: 1, rain: 0, snow: 0, wet: 0, snowCover: 0 };
+    this.wt = { ...this.w };
+    this.weatherName = 'fair';
+    this.baseFog = 0.00052;
+    this.ring = Array.from({ length: 8 }, () => new THREE.Color(0.7, 0.75, 0.8));
+    this._grey = new THREE.Color();
+    this._lastEnvTime = -100; this._lastOc = 0; this._bakeCooldown = 0;
     this._fogTarget = new THREE.Color(0xbfd0e0);
   }
 
@@ -140,13 +144,63 @@ export class Atmosphere {
     return elev;
   }
 
+  // weather presets: cover, overcast (greyness), fog multiplier, rain, snow
+  setWeather(name) {
+    const P = {
+      clear: [0.18, 0, 1, 0, 0],
+      fair: [0.38, 0, 1, 0, 0],
+      cloudy: [0.68, 0.45, 1.5, 0, 0],
+      rain: [0.9, 0.85, 2.6, 1, 0],
+      storm: [0.97, 1, 3.4, 1.6, 0],
+      snow: [0.9, 0.75, 3.0, 0, 1],
+    }[name] || [0.38, 0, 1, 0, 0];
+    const t = this.wt;
+    [t.cover, t.overcast, t.fogMul, t.rain, t.snow] = P;
+    this.weatherName = name;
+  }
+
+  _bake() {
+    for (const k in SKY_PARAMS) this.envSky.material.uniforms[k].value = this.sky.material.uniforms[k].value;
+    if (this.envRT) this.envRT.dispose();
+    this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 2000);
+    this.scene.environment = this.envRT.texture;
+    // sample the horizon colour in 8 directions once (no per-frame GPU sync)
+    const pc = this.probeCam, prev = this.renderer.getRenderTarget();
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      pc.position.set(0, 0, 0);
+      pc.lookAt(Math.sin(a), 0.06, Math.cos(a));
+      pc.updateMatrixWorld();
+      this.renderer.setRenderTarget(this.probeRT);
+      this.renderer.render(this.envScene, pc);
+      this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, 8, 8, this.probeBuf);
+      let r = 0, g = 0, b = 0;
+      for (let i = 0; i < 64; i++) { r += this.probeBuf[i * 4]; g += this.probeBuf[i * 4 + 1]; b += this.probeBuf[i * 4 + 2]; }
+      if (!Number.isFinite(r)) r = g = b = 0.5 * 64;
+      this.ring[k].setRGB(Math.max(r / 64, 0.006), Math.max(g / 64, 0.009), Math.max(b / 64, 0.018));
+    }
+    this.renderer.setRenderTarget(prev);
+  }
+
   update(dt, camera, focus) {
     const elev = this._computeSun();
     const se = Math.sin(elev);
     const day = smoothstep(-0.06, 0.08, se);
     this.night = 1 - smoothstep(-0.18, -0.02, se);
 
+    // ease weather towards its target
+    const w = this.w, t = this.wt;
+    const ease = (k, rate) => { w[k] += (t[k] - w[k]) * (1 - Math.exp(-dt * rate)); };
+    ease('cover', 0.25); ease('overcast', 0.25); ease('fogMul', 0.3); ease('rain', 0.4); ease('snow', 0.4);
+    w.wet += ((t.rain > 0 ? 1 : 0) - w.wet) * (1 - Math.exp(-dt * (t.rain > 0 ? 0.15 : 0.05)));
+    w.snowCover += ((t.snow > 0 ? 1 : 0) - w.snowCover) * (1 - Math.exp(-dt * (t.snow > 0 ? 0.08 : 0.06)));
+    const oc = w.overcast;
+
     for (const s of [this.sky, this.envSky]) s.material.uniforms.sunPosition.value.copy(this.sunDir);
+    const su = this.sky.material.uniforms;
+    su.turbidity.value = lerp(SKY_PARAMS.turbidity, 16, oc);
+    su.rayleigh.value = lerp(SKY_PARAMS.rayleigh, 0.35, oc);
+    su.mieCoefficient.value = lerp(SKY_PARAMS.mieCoefficient, 0.002, oc);
     this.sky.position.copy(camera.position);
 
     // sun / moon light
@@ -156,69 +210,54 @@ export class Atmosphere {
       this.lightDir.copy(this.sunDir);
       if (this.lightDir.y < 0.05) this.lightDir.y = 0.05;
       this.lightDir.normalize();
-      this.sun.color.copy(this.sunColor);
-      this.sun.intensity = day * 3.4;
+      this.sun.color.copy(this.sunColor).lerp(new THREE.Color(0.8, 0.85, 0.95), oc);
+      this.sun.intensity = day * 3.4 * (1 - oc * 0.8);
     } else {
-      // moon
       this.lightDir.set(-this.sunDir.x, Math.max(0.35, -this.sunDir.y), -this.sunDir.z).normalize();
       this.sun.color.setRGB(0.55, 0.65, 1.0);
-      this.sun.intensity = 0.15 + 0.45 * this.night;
+      this.sun.intensity = (0.15 + 0.45 * this.night) * (1 - oc * 0.7);
     }
-    this.hemi.intensity = 0.08 + this.night * 0.7 + (1 - day) * 0.35;
+    this.hemi.intensity = 0.08 + this.night * 0.7 * (1 - oc * 0.5) + (1 - day) * 0.35 + oc * day * 1.1;
     this.hemi.color.setRGB(lerp(0.55, 0.25, this.night), lerp(0.65, 0.32, this.night), lerp(0.85, 0.6, this.night));
 
-    // shadow box follows the focus point, snapped to texels to avoid shimmer
     const texel = 140 / 2048;
     const fx = Math.round(focus.x / texel) * texel, fz = Math.round(focus.z / texel) * texel;
     this.sun.target.position.set(fx, focus.y, fz);
     this.sun.position.set(fx + this.lightDir.x * 400, focus.y + this.lightDir.y * 400, fz + this.lightDir.z * 400);
     this.sun.target.updateMatrixWorld();
 
-    // environment map (re-bake when the sun moves noticeably)
-    if (Math.abs(this.time - this._lastEnvTime) > 0.08) {
-      this._lastEnvTime = this.time;
-      if (this.envRT) this.envRT.dispose();
-      this.envRT = this.pmrem.fromScene(this.envScene, 0, 0.1, 2000);
-      this.scene.environment = this.envRT.texture;
-      this._probeTimer = 0;
+    // re-bake environment when sun or weather changed (rate limited)
+    this._bakeCooldown -= dt;
+    if (this._bakeCooldown <= 0 && (Math.abs(this.time - this._lastEnvTime) > 0.08 || Math.abs(oc - this._lastOc) > 0.04)) {
+      this._lastEnvTime = this.time; this._lastOc = oc; this._bakeCooldown = 0.5;
+      this._bake();
     }
-    this.scene.environmentIntensity = lerp(0.25, 1.0, day);
+    this.scene.environmentIntensity = lerp(0.25, 1.0, day) * (1 - oc * 0.35);
 
-    // fog colour from the sky horizon in the viewing direction
-    this._probeTimer -= dt;
-    if (this._probeTimer <= 0) {
-      this._probeTimer = 0.25;
-      const pc = this.probeCam;
-      pc.position.set(0, 0, 0);
-      const f = new THREE.Vector3(); camera.getWorldDirection(f); f.y = 0; f.normalize();
-      pc.lookAt(f.x, 0.06, f.z);
-      pc.updateMatrixWorld();
-      const prev = this.renderer.getRenderTarget();
-      this.renderer.setRenderTarget(this.probeRT);
-      this.renderer.render(this.envScene, pc);
-      this.renderer.readRenderTargetPixels(this.probeRT, 0, 0, 8, 8, this.probeBuf);
-      this.renderer.setRenderTarget(prev);
-      let r = 0, g = 0, b = 0;
-      for (let i = 0; i < 64; i++) { r += this.probeBuf[i * 4]; g += this.probeBuf[i * 4 + 1]; b += this.probeBuf[i * 4 + 2]; }
-      r /= 64; g /= 64; b /= 64;
-      if (Number.isFinite(r)) {
-        const nightC = [0.006, 0.009, 0.018];
-        this._fogTarget.setRGB(Math.max(r, nightC[0]), Math.max(g, nightC[1]), Math.max(b, nightC[2]));
-      }
-    }
+    // fog colour: interpolate the horizon ring by view yaw, grey it out with overcast
+    const f = new THREE.Vector3(); camera.getWorldDirection(f);
+    let a = Math.atan2(f.x, f.z); if (a < 0) a += Math.PI * 2;
+    const u = (a / (Math.PI * 2)) * 8, k0 = Math.floor(u) % 8, k1 = (k0 + 1) % 8;
+    this._fogTarget.copy(this.ring[k0]).lerp(this.ring[k1], u - Math.floor(u));
+    const lum = this._fogTarget.r * 0.3 + this._fogTarget.g * 0.55 + this._fogTarget.b * 0.15;
+    this._grey.setRGB(lum * 0.78, lum * 0.82, lum * 0.88);
+    this._fogTarget.lerp(this._grey, Math.min(1, oc * 1.1));
+    if (w.snow > 0.01) this._fogTarget.multiplyScalar(1 + w.snow * 0.15);
     this.scene.fog.color.lerp(this._fogTarget, 1 - Math.exp(-dt * 4));
+    this.scene.fog.density = this.baseFog * w.fogMul;
 
     // clouds & stars
     const cu = this.cloudMat.uniforms;
     cu.uTime.value += dt;
     cu.uSunDir.value.copy(this.sunDir);
-    cu.uSunColor.value.copy(this.sunColor).multiplyScalar(lerp(0.15, 2.2, day));
-    cu.uSkyColor.value.copy(this.scene.fog.color);
-    cu.uCover.value = this.cloudCover;
+    cu.uSunColor.value.copy(this.sunColor).multiplyScalar(lerp(0.15, 2.2, day) * (1 - oc * 0.7));
+    cu.uSkyColor.value.copy(this.scene.fog.color).multiplyScalar(1 - oc * 0.25);
+    cu.uCover.value = w.cover;
     cu.uNight.value = this.night * 0.92;
     this.clouds.position.x = camera.position.x; this.clouds.position.z = camera.position.z;
     cu.uCam.value.set(camera.position.x, camera.position.z);
     this.stars.position.copy(camera.position);
-    this.starMat.opacity = this.night;
+    this.starMat.opacity = this.night * (1 - smoothstep(0.5, 0.85, w.cover));
+    this.light = day * (1 - oc * 0.6) + this.night * 0.08 + 0.04; // rough scene brightness for particles
   }
 }
