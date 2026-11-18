@@ -13,7 +13,7 @@ import { clamp, lerp, mulberry32 } from './noise.js';
 // ---------------- settings ----------------
 const isTouch = matchMedia('(pointer: coarse)').matches;
 const QUALITY = {
-  high: { name: '높음', pixelRatio: Math.min(devicePixelRatio, 2), shadows: true, grass: true, grassCount: 14000, farSegs: 16, view: 7, bloom: true, msaa: 4 },
+  high: { name: '높음', pixelRatio: Math.min(devicePixelRatio, 2), shadows: true, grass: true, grassCount: 10000, farSegs: 16, view: 7, bloom: true, msaa: 4 },
   medium: { name: '보통', pixelRatio: Math.min(devicePixelRatio, 1.5), shadows: true, grass: true, grassCount: 6000, farSegs: 16, view: 6, bloom: true, msaa: 2 },
   low: { name: '낮음', pixelRatio: 1, shadows: false, grass: false, grassCount: 0, farSegs: 12, view: 5, bloom: false, msaa: 0 },
 };
@@ -115,7 +115,7 @@ let hudHidden = false;
 const TIME_PRESETS = [6.6, 9.5, 13, 16.6, 18.15, 19.1, 23.5];
 let presetIdx = 3;
 atmo.setTime(TIME_PRESETS[presetIdx]);
-const CLOUDS = [0.25, 0.5, 0.7, 0.88];
+const CLOUDS = [0.2, 0.38, 0.6, 0.85];
 let cloudIdx = 1;
 let colorIdx = 0;
 const audio = new CarAudio();

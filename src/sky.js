@@ -41,7 +41,7 @@ export class Atmosphere {
     this.hemi = new THREE.HemisphereLight(0x8fa8d8, 0x2a2418, 0.0);
     scene.add(this.hemi);
 
-    scene.fog = new THREE.FogExp2(0xbfd0e0, 0.00075);
+    scene.fog = new THREE.FogExp2(0xbfd0e0, 0.00052);
 
     // probe to match fog colour to the sky horizon
     this.probeRT = new THREE.WebGLRenderTarget(8, 8, { type: THREE.FloatType });
@@ -52,7 +52,7 @@ export class Atmosphere {
     this._makeStars();
 
     this.time = 17.2;
-    this.cloudCover = 0.5;
+    this.cloudCover = 0.38;
     this._lastEnvTime = -100;
     this._probeTimer = 0;
     this._fogTarget = new THREE.Color(0xbfd0e0);
@@ -88,18 +88,18 @@ export class Atmosphere {
           vec2 p = mod(vP, 400000.0) * 0.00022 + vec2(uTime*0.004, uTime*0.0015);
           float n = fbm(p);
           float lo = 1.0 - uCover;
-          float d = smoothstep(lo, lo + 0.32, n);
+          float d = smoothstep(lo, lo + 0.22, n);
           if (d < 0.003) discard;
           float n2 = fbm(p + uSunDir.xz * 0.05);
           float shade = clamp(1.0 - (n2 - n) * 6.0 - d * 0.35, 0.0, 1.0);
           vec3 dir = normalize(vDir);
           float sunFacing = pow(max(dot(dir, uSunDir), 0.0), 6.0);
           vec3 lit = uSunColor * (0.7 + 1.2 * sunFacing);
-          vec3 col = mix(uSkyColor * 0.85, lit, shade * 0.85);
+          vec3 col = mix(uSkyColor * 0.95, lit, 0.35 + shade * 0.65);
           col = mix(col, vec3(0.012, 0.016, 0.03), uNight);
           float dist = length(vDir.xz);
           float fade = 1.0 - smoothstep(5000.0, 16000.0, dist);
-          gl_FragColor = vec4(col, d * fade * 0.92);
+          gl_FragColor = vec4(col, d * fade * 0.85);
         }`,
     });
     this.clouds = new THREE.Mesh(geo, this.cloudMat);
