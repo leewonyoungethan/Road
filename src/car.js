@@ -122,7 +122,7 @@ export class Car {
     this.pos.set(s.x - s.fz * lat, s.y, s.z + s.fx * lat);
     this.yaw = s.heading;
     this.speed = 0; this.steer = 0; this.idx = Math.floor(i);
-    this.y = s.y; this.vy = 0; this.rail = false;
+    this.y = s.y; this.vy = 0; this.rail = false; this.airborne = false;
   }
 
   get dir() { return [Math.sin(this.yaw), Math.cos(this.yaw)]; }
@@ -184,6 +184,7 @@ export class Car {
     }
     a -= 0.0011 * this.speed * Math.abs(this.speed) * Math.min(1, (58 / Math.max(limit, 1)) ** 2);
     a -= Math.sign(this.speed) * 0.18;
+    if (this.airborne) a *= 0.15;
     const prev = this.speed;
     this.speed += a * dt;
     if (!auto && this.speed < -9) this.speed = -9;
@@ -194,7 +195,7 @@ export class Car {
 
     // above RAIL speed the car follows the road like a rail (steering only shifts lanes)
     if (this.rail && !auto) this.rail = false;
-    if (!this.rail && auto && this.speed > RAIL && this.onRoad) {
+    if (!this.rail && auto && this.speed > RAIL && this.onRoad && !this.airborne) {
       this.rail = true; this.railS = loc.i + loc.t; this.railLat = clamp(this.lat, -ROAD_HALF + 0.9, ROAD_HALF - 0.9);
     } else if (this.rail && this.speed < RAIL - 6) this.rail = false;
 
@@ -219,7 +220,7 @@ export class Car {
     }
 
     // yaw / move (turn rate capped so very high speeds stay controllable)
-    const yawRate = clamp(this.speed * Math.tan(this.steer) / WB, -1.6, 1.6);
+    const yawRate = clamp(this.speed * Math.tan(this.steer) / WB, -1.6, 1.6) * (this.airborne ? 0.25 : 1);
     this.yaw -= yawRate * dt;
     const [nfx, nfz] = this.dir;
     this.pos.x += nfx * this.speed * dt;
@@ -236,14 +237,37 @@ export class Car {
     const ty = (hFL + hFR + hRL + hRR) / 4;
     const tPitch = Math.atan2((hFL + hFR) / 2 - (hRL + hRR) / 2, WB);
     const tRoll = Math.atan2((hFL + hRL) / 2 - (hFR + hRR) / 2, TRACK);
-    // simple suspension spring
-    const k = 120, c = 18;
-    this.vy += ((ty - this.y) * k - this.vy * c) * dt;
-    this.y += this.vy * dt;
-    if (this.y < ty - 0.12) { this.y = ty - 0.12; this.vy = Math.max(this.vy, 0); }
-    const latAcc = this.speed * this.speed * Math.tan(this.steer) / WB;
-    this.pitch = lerp(this.pitch, tPitch, 1 - Math.exp(-10 * dt));
-    this.roll = lerp(this.roll, tRoll, 1 - Math.exp(-10 * dt));
+    // gravity: on the ground vy tracks the slope; if the ground falls away faster than
+    // a ballistic arc (crests, cliffs) the car takes off and drops under gravity
+    const G = 14;
+    const latAcc = this.airborne ? 0 : this.speed * this.speed * Math.tan(this.steer) / WB;
+    if (this.airborne) {
+      this.vy -= G * dt;
+      this.y += this.vy * dt;
+      this.airTime += dt;
+      const tp = clamp(Math.atan2(this.vy, Math.max(Math.abs(this.speed), 1)), -0.9, 0.6);
+      this.pitch = lerp(this.pitch, tp, 1 - Math.exp(-2.5 * dt));
+      this.roll = lerp(this.roll, 0, 1 - Math.exp(-1.5 * dt));
+      if (this.y <= ty) {
+        const impact = -this.vy;
+        this.y = ty; this.vy = 0; this.airborne = false;
+        this.landBump = Math.min(0.35, impact * 0.012);
+        this.speed *= impact > 25 ? 0.85 : 0.97; // hard landings scrub some speed
+        if (this.onLand) this.onLand(impact, this.airTime);
+      }
+    } else {
+      const ballY = this.y + this.vy * dt - 0.5 * G * dt * dt;
+      if (ballY > ty + 0.04 && Math.abs(this.speed) > 6) {
+        this.airborne = true; this.airTime = 0;
+        this.vy -= G * dt; this.y = ballY;
+      } else {
+        this.vy = clamp((ty - this.y) / Math.max(dt, 1e-3), -Math.abs(this.speed) - 5, Math.abs(this.speed) + 5);
+        this.y = ty;
+      }
+      this.pitch = lerp(this.pitch, tPitch, 1 - Math.exp(-12 * dt));
+      this.roll = lerp(this.roll, tRoll, 1 - Math.exp(-12 * dt));
+    }
+    this.landBump = (this.landBump || 0) * Math.exp(-6 * dt);
     this._finishPose(dt, a, latAcc);
   }
 
@@ -255,7 +279,7 @@ export class Car {
     this.group.position.set(this.pos.x, this.y, this.pos.z);
     this.group.rotation.set(-this.pitch, this.yaw, this.roll, 'YXZ');
     this.body.rotation.set(bodyPitch, 0, bodyRoll);
-    this.body.position.y = Math.sin(this.dist * 0.9) * 0.004 * (this.onRoad ? 0.3 : 3);
+    this.body.position.y = Math.sin(this.dist * 0.9) * 0.004 * (this.onRoad ? 0.3 : 3) - (this.landBump || 0) * Math.abs(Math.sin(performance.now() * 0.02));
 
     this.wheelRot = (this.wheelRot + (this.speed * dt) / WR) % (Math.PI * 2);
     for (const wh of this.wheels) {

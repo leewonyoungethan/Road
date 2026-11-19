@@ -45,7 +45,7 @@
   @media (pointer: coarse) { .keys { display: none; } }
 
   /* ----- loading ----- */
-  #loading { position: fixed; left: 8vw; bottom: 9vh; width: min(320px, 70vw); z-index: 6; transition: opacity .8s; }
+  #loading { position: fixed; left: 50%; top: 22px; transform: translateX(-50%); width: min(280px, 60vw); z-index: 6; transition: opacity .8s; text-align: center; }
   #loading.done { opacity: 0; pointer-events: none; }
   #loading small { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
   #loading .track { margin-top: 8px; height: 2px; background: rgba(255,255,255,0.15); border-radius: 2px; overflow: hidden; }

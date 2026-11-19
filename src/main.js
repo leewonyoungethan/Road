@@ -313,6 +313,7 @@ function updateCamera(dt) {
 const START_IDX = 160;
 world.ensureRoad(START_IDX * STEP + quality.view * CHUNK + 400);
 car.placeOnRoad(START_IDX, LANE);
+car.onLand = (impact, t) => { if (t > 1.2) toast(`${t.toFixed(1)}초 비행 — 착지!`); };
 let speedKmh = (() => { try { return parseFloat(localStorage.getItem('wr-speed')); } catch { return NaN; } })();
 if (!Number.isFinite(speedKmh)) speedKmh = 80;
 function setSpeedKmh(v, silent) {

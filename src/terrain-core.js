@@ -312,7 +312,7 @@ export class TerrainCore {
       r = lerp(r, 0.22, border * m * 0.6); g = lerp(g, 0.33, border * m * 0.6); b = lerp(b, 0.12, border * m * 0.6);
     }
     // desert sand
-    const ds = smoothstep(0.5, 1.05, dry * 0.6 + P.dry * 0.75 + v * 0.25);
+    const ds = smoothstep(0.35, 0.8, dry * 0.35 + P.dry * 0.95 + v * 0.2);
     r = lerp(r, 0.8, ds); g = lerp(g, 0.64, ds); b = lerp(b, 0.42, ds);
     const fo = this.forest(x, z);
     const fd = 1 - 0.38 * fo * smoothstep(140, 100, h);
@@ -335,7 +335,7 @@ export class TerrainCore {
     const gr = 1 - smoothstep(ROAD_W - 0.4, ROAD_W + 2.5, d);
     r = lerp(r, 0.46, gr); g = lerp(g, 0.43, gr); b = lerp(b, 0.38, gr);
     out[0] = lin(r); out[1] = lin(g); out[2] = lin(b);
-    out[3] = (1 - rock) * (1 - sand) * (1 - snow) * (1 - gr) * (1 - uw); // grassiness
+    out[3] = (1 - rock) * (1 - sand) * (1 - snow) * (1 - gr) * (1 - uw) * (1 - ds * 0.85); // grassiness
     return out;
   }
 
