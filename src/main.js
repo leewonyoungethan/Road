@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { World, STEP, LANE, CHUNK } from './world.js';
 import { Atmosphere } from './sky.js';
 import { Car, CAR_COLORS } from './car.js';
-import { CarAudio } from './audio.js';
+import { CarAudio, SOUND_NAMES } from './audio.js';
 import { Precipitation } from './weather.js';
 import { clamp, lerp, mulberry32 } from './noise.js';
 
@@ -45,7 +45,8 @@ atmo.sun.castShadow = quality.shadows;
 atmo.sun.shadow.mapSize.set(quality.shadowSize, quality.shadowSize);
 const precip = new Precipitation(scene);
 
-let world = new World(seed, scene, quality);
+const forcedType = params.get('type');
+let world = new World(seed, scene, quality, forcedType);
 const car = new Car(scene, world);
 
 // ---------------- water ----------------
@@ -196,11 +197,11 @@ function setWeather(i) {
   toast(`날씨: ${WEATHER_NAMES[WEATHERS[i]]}`); refreshUI();
 }
 function cycleColor() { colorIdx = (colorIdx + 1) % CAR_COLORS.length; car.setColor(CAR_COLORS[colorIdx]); }
-function toggleMute() { audio.setMuted(!audio.muted); refreshUI(); }
+function toggleMute() { const m = audio.cycle(); refreshUI(); toast(`소리: ${SOUND_NAMES[m]}`); }
 function resetCar() { car.placeOnRoad(car.idx + 2); toast('도로로 복귀'); }
 function setQuality(k) {
   try { localStorage.setItem('wr-quality', k); } catch {}
-  location.hash = `seed=${seed}`;
+  location.hash = `seed=${seed}` + (forcedType ? `&type=${forcedType}` : '');
   location.reload();
 }
 function newWorld() {
@@ -212,7 +213,7 @@ function refreshUI() {
   ui.auto.classList.toggle('active', autoDrive);
   ui.auto.querySelector('span').textContent = autoDrive ? '자동 주행' : '수동 주행';
   ui.cam.querySelector('span').textContent = CAM_NAMES[camMode];
-  ui.sound.querySelector('span').textContent = audio.muted ? '소리 꺼짐' : '소리 켜짐';
+  ui.sound.querySelector('span').textContent = SOUND_NAMES[audio.mode];
   ui.qual.querySelector('span').textContent = `화질 ${quality.name}`;
   ui.mode.textContent = autoDrive ? 'AUTO' : 'MANUAL';
   ui.clouds.querySelector('span').textContent = WEATHER_NAMES[WEATHERS[weatherIdx]];
@@ -222,7 +223,13 @@ ui.auto.onclick = toggleAuto; ui.cam.onclick = cycleCam; ui.time.onclick = cycle
 ui.clouds.onclick = cycleClouds; ui.color.onclick = cycleColor;
 ui.qual.onclick = () => { const order = ['high', 'medium', 'low']; setQuality(order[(order.indexOf(qualityKey) + 1) % 3]); };
 $('btn-new').onclick = newWorld;
-ui.seed.textContent = `#${seed}`;
+ui.seed.textContent = `#${seed} · ${world.typeName}`;
+document.querySelectorAll('[data-wtype]').forEach((b) => {
+  const t = b.dataset.wtype;
+  b.classList.toggle('active', t === (forcedType || ''));
+  b.onclick = () => { seed = Math.floor(Math.random() * 1e6); location.hash = `seed=${seed}` + (t ? `&type=${t}` : ''); location.reload(); };
+});
+$('wname').textContent = world.typeName;
 $('start').onclick = () => {
   document.body.classList.add('playing');
   audio.start();

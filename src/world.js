@@ -16,8 +16,8 @@ float pnoise(vec2 x, float per){
 }`;
 
 export class World extends TerrainCore {
-  constructor(seed, scene, quality) {
-    super(seed);
+  constructor(seed, scene, quality, worldType) {
+    super(seed, worldType);
     this.scene = scene;
     this.quality = quality;
     this.chunks = new Map();
@@ -39,7 +39,7 @@ export class World extends TerrainCore {
         w.busy = 0;
         w.onmessage = (e) => { w.busy--; this._onChunk(e.data); };
         w.onerror = (e) => { console.warn('chunk worker failed, using main thread', e.message); this._fallback(); };
-        w.postMessage({ type: 'init', seed: this.seed });
+        w.postMessage({ type: 'init', seed: this.seed, worldType: this.type });
         this.workers.push(w);
       }
     } catch (err) {

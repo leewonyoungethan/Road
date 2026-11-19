@@ -162,14 +162,14 @@ export class Car {
     }
 
     // steering
-    const maxSteer = 0.52 / (1 + Math.abs(this.speed) * 0.045);
+    const maxSteer = Math.max(0.52 / (1 + Math.abs(this.speed) * 0.045), 0.012);
     const targetSteer = steerIn * maxSteer;
     const rate = auto ? 4 : (steerIn === 0 ? 5 : 2.5);
     this.steer = lerp(this.steer, targetSteer, 1 - Math.exp(-rate * dt));
 
     // longitudinal dynamics
     const limit = this.autoSpeed;               // the speed setting (m/s) caps manual driving too
-    const maxV = this.onRoad ? limit : Math.min(20, limit);
+    const maxV = limit; // no off-road penalty: drive anywhere, even up mountains
     const boost = Math.max(0, limit - 50) * 0.32; // so very high limits are reached in a few seconds
     let a = 0;
     if (throttle > 0) {
@@ -183,9 +183,7 @@ export class Car {
       else this.speed *= 0.9;
     }
     a -= 0.0011 * this.speed * Math.abs(this.speed) * Math.min(1, (58 / Math.max(limit, 1)) ** 2);
-    a -= Math.sign(this.speed) * (this.onRoad ? 0.18 : 1.8);
-    if (!this.onRoad) a -= this.speed * 0.25;
-    a -= 9.81 * Math.sin(this.pitch) * 0.9;
+    a -= Math.sign(this.speed) * 0.18;
     const prev = this.speed;
     this.speed += a * dt;
     if (!auto && this.speed < -9) this.speed = -9;
@@ -195,7 +193,8 @@ export class Car {
     this.throttleIn = throttle;
 
     // above RAIL speed the car follows the road like a rail (steering only shifts lanes)
-    if (!this.rail && this.speed > RAIL && this.onRoad) {
+    if (this.rail && !auto) this.rail = false;
+    if (!this.rail && auto && this.speed > RAIL && this.onRoad) {
       this.rail = true; this.railS = loc.i + loc.t; this.railLat = clamp(this.lat, -ROAD_HALF + 0.9, ROAD_HALF - 0.9);
     } else if (this.rail && this.speed < RAIL - 6) this.rail = false;
 
@@ -219,8 +218,9 @@ export class Car {
       return;
     }
 
-    // yaw / move
-    this.yaw -= (this.speed * Math.tan(this.steer) / WB) * dt;
+    // yaw / move (turn rate capped so very high speeds stay controllable)
+    const yawRate = clamp(this.speed * Math.tan(this.steer) / WB, -1.6, 1.6);
+    this.yaw -= yawRate * dt;
     const [nfx, nfz] = this.dir;
     this.pos.x += nfx * this.speed * dt;
     this.pos.z += nfz * this.speed * dt;

@@ -4,7 +4,7 @@ import { TerrainCore } from './terrain-core.js';
 let core = null;
 self.onmessage = (e) => {
   const m = e.data;
-  if (m.type === 'init') { core = new TerrainCore(m.seed); return; }
+  if (m.type === 'init') { core = new TerrainCore(m.seed, m.worldType); return; }
   if (m.type === 'build') {
     const d = core.buildChunkData(m.cx, m.cz, m.segs, m.detail, m.opts);
     d.key = m.key; d.lod = m.lod; d.job = m.job;

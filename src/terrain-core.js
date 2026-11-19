@@ -17,8 +17,18 @@ export const SMOOTH_W = 30;
 
 export const lin = (c) => Math.pow(c, 2.2);
 
+// Every seed gets a world "personality"; regions inside it still vary (plains <-> mountains)
+export const WORLD_TYPES = {
+  plains: { name: '평원', flat: 0.75, mtn: 0.45, hill: 0.6, dry: 0.05, forest: 0.7, lake: 0.0 },
+  hills: { name: '구릉', flat: 0.3, mtn: 0.55, hill: 1.35, dry: -0.1, forest: 1.15, lake: 0.0 },
+  alpine: { name: '산악', flat: 0.1, mtn: 1.45, hill: 1.0, dry: -0.2, forest: 1.2, lake: 0.1 },
+  lakes: { name: '호수', flat: 0.45, mtn: 0.55, hill: 0.8, dry: -0.3, forest: 1.1, lake: 0.38 },
+  desert: { name: '사막', flat: 0.55, mtn: 0.85, hill: 0.75, dry: 1.0, forest: 0.12, lake: -0.45 },
+  mixed: { name: '혼합', flat: 0.4, mtn: 0.95, hill: 1.0, dry: 0.0, forest: 1.0, lake: 0.05 },
+};
+
 export class TerrainCore {
-  constructor(seed) {
+  constructor(seed, forcedType) {
     this.seed = seed;
     const r = mulberry32(seed * 7 + 13);
     this.nC = makeNoise2D(seed + 1);
@@ -28,6 +38,12 @@ export class TerrainCore {
     this.nB = makeNoise2D(seed + 5);
     this.nRoad = makeNoise2D(seed + 6);
     this.nF = makeNoise2D(seed + 7);
+    this.nP = makeNoise2D(seed + 8);
+    const keys = Object.keys(WORLD_TYPES);
+    this.type = keys[Math.floor(r() * keys.length)];
+    if (WORLD_TYPES[forcedType]) this.type = forcedType;
+    this.P = WORLD_TYPES[this.type];
+    this.typeName = this.P.name;
 
     // pick a world offset so that the start is on land
     for (let k = 0; k < 200; k++) {
@@ -47,30 +63,45 @@ export class TerrainCore {
   }
 
   // ---------------- terrain height ----------------
+  // 0 = rough terrain, 1 = flat plains (regional, world-type biased); x/z already offset
+  _flat(x, z) {
+    const n = this.nP(x * 0.00021 + 11, z * 0.00021 - 5) * 0.7 + this.nP(x * 0.0007, z * 0.0007) * 0.3;
+    return smoothstep(0.1, 0.5, n + (this.P.flat - 0.4) * 1.2);
+  }
+  flatness(x, z) { return this._flat(x + this.ox, z + this.oz); }
+
   baseHeight(x, z) {
     x += this.ox; z += this.oz;
-    const c = this.nC(x * 0.00032, z * 0.00032) * 0.65 + this.nC(x * 0.0009 + 31, z * 0.0009 - 17) * 0.35;
+    const P = this.P;
+    const flat = this._flat(x, z);
+    const c = this.nC(x * 0.00032, z * 0.00032) * 0.65 + this.nC(x * 0.0009 + 31, z * 0.0009 - 17) * 0.35 - P.lake;
     let h = 16 + c * 52;
     let a = 1, f = 0.0024, hs = 0;
     for (let o = 0; o < 4; o++) { hs += this.nH(x * f, z * f) * a; a *= 0.5; f *= 2.03; }
-    h += hs * 20;
-    const mm = smoothstep(-0.1, 0.55, this.nM(x * 0.00026 + 50, z * 0.00026 - 80));
+    h += hs * 20 * P.hill;
+    const mm = smoothstep(-0.1, 0.55, this.nM(x * 0.00026 + 50, z * 0.00026 - 80) + (P.mtn - 1) * 0.35) * (1 - flat);
     if (mm > 0) {
       let rr = 0, w = 1; a = 1; f = 0.0011;
       for (let o = 0; o < 5; o++) {
         let n = 1 - Math.abs(this.nR(x * f, z * f)); n *= n; n *= w;
         w = clamp(n * 1.3, 0, 1); rr += n * a; a *= 0.5; f *= 2.1;
       }
-      h += rr * 210 * mm;
+      h += rr * 210 * mm * Math.max(0.6, P.mtn);
+    }
+    if (flat > 0) {
+      // gently rolling plains with the odd shallow lake
+      const plain = 9 + c * 9 + this.nH(x * 0.0012 + 3, z * 0.0012) * 3 + hs * 1.5;
+      h = lerp(h, plain, flat);
     }
     h += this.nH(x * 0.031 + 7, z * 0.031) * 0.5;
     return h;
   }
 
   forest(x, z) {
+    const fl = this.flatness(x, z);
     x += this.ox; z += this.oz;
     const f = this.nF(x * 0.0032, z * 0.0032) * 0.7 + this.nF(x * 0.014, z * 0.014) * 0.3;
-    return smoothstep(0.0, 0.45, f);
+    return smoothstep(0.0, 0.45, f) * clamp(this.P.forest * (1 - 0.7 * fl) + (this.P.forest - 1) * 0.2, 0, 1);
   }
 
   // ---------------- road generation ----------------
@@ -83,7 +114,7 @@ export class TerrainCore {
     }
     const x0 = this.rx[n - 1], z0 = this.rz[n - 1];
     const s = n * STEP;
-    let target = 0.95 * this.nRoad(s * 0.0009, 0.37) + 0.45 * this.nRoad(s * 0.0037, 5.3);
+    let target = 0.95 * this.nRoad(s * 0.0009, 0.37) + 0.45 * this.nRoad(s * 0.0037, 5.3) * lerp(1, 0.25, this.flatness(x0, z0));
     if (n % 2 === 0) {
       const L = 85, h0 = this.baseHeight(x0, z0);
       const cost = (ang) => {
@@ -199,12 +230,18 @@ export class TerrainCore {
       const crown = 0.05 * (1 - Math.min(1, Math.abs(q.lat) / ROAD_HALF));
       return q.h + crown;
     }
-    return Math.max(h, WATER_LEVEL - 1.2);
+    return Math.max(h, WATER_LEVEL + 0.05); // skim across lakes instead of sinking
   }
 
   // locate along the road using a local search window (fast, for the car)
   locate(x, z, hint) {
     const n = this.rh.length - 1;
+    // far from the road (off-road adventure): re-anchor the hint by z (road z is monotonic)
+    if (hint >= 0 && hint < n && Math.abs(this.rz[hint] - z) > 120) {
+      let lo = 0, hi = n;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (this.rz[mid] < z) lo = mid + 1; else hi = mid; }
+      hint = lo;
+    }
     let best = 1e18, bi = 0, bt = 0;
     const a = clamp(hint - 40, 0, n - 1), e = clamp(hint + 40, 0, n - 1);
     for (let i = a; i < e; i++) {
@@ -252,11 +289,31 @@ export class TerrainCore {
     const wx = x + this.ox, wz = z + this.oz;
     const dry = this.nB(wx * 0.00045, wz * 0.00045);
     const v = this.nB(wx * 0.012 + 3, wz * 0.012 - 8) * 0.5 + this.nB(wx * 0.05, wz * 0.05) * 0.25;
-    const t = smoothstep(-0.25, 0.75, dry + v * 0.35);
+    const P = this.P, fl = this.flatness(x, z);
+    const t = smoothstep(-0.25, 0.75, dry + v * 0.35 + P.dry * 0.6);
     let r = lerp(0.25, 0.58, t), g = lerp(0.42, 0.52, t), b = lerp(0.12, 0.24, t);
     // flowers / patches of yellow-green
     const p = smoothstep(0.35, 0.6, v);
     r = lerp(r, r * 1.25, p); g = lerp(g, g * 1.1, p);
+    // farm fields on plains
+    const fieldMask = smoothstep(0.45, 0.85, fl) * (1 - smoothstep(0.3, 0.8, dry + P.dry));
+    if (fieldMask > 0.01) {
+      const jx = wx + this.nB(wx * 0.004, wz * 0.004) * 40, jz = wz + this.nB(wx * 0.004 + 9, wz * 0.004) * 40;
+      const fx = Math.floor(jx / 140), fz = Math.floor(jz / 95);
+      const hsh = Math.abs(Math.sin(fx * 127.1 + fz * 311.7 + this.seed * 0.013) * 43758.5453) % 1;
+      const crops = [[0.74, 0.63, 0.3], [0.34, 0.5, 0.15], [0.5, 0.6, 0.22], [0.47, 0.37, 0.24], [0.62, 0.66, 0.28], [0.28, 0.42, 0.13]];
+      const cc = crops[Math.floor(hsh * crops.length)];
+      // darker furrow lines + field borders
+      const ex = Math.min(jx / 140 - fx, 1 - (jx / 140 - fx)) * 140, ez = Math.min(jz / 95 - fz, 1 - (jz / 95 - fz)) * 95;
+      const border = 1 - smoothstep(0, 3, Math.min(ex, ez));
+      const furrow = 0.93 + 0.07 * Math.sin((hsh > 0.5 ? jx : jz) * 2.4);
+      const m = fieldMask * 0.85;
+      r = lerp(r, cc[0] * furrow, m); g = lerp(g, cc[1] * furrow, m); b = lerp(b, cc[2] * furrow, m);
+      r = lerp(r, 0.22, border * m * 0.6); g = lerp(g, 0.33, border * m * 0.6); b = lerp(b, 0.12, border * m * 0.6);
+    }
+    // desert sand
+    const ds = smoothstep(0.5, 1.05, dry * 0.6 + P.dry * 0.75 + v * 0.25);
+    r = lerp(r, 0.8, ds); g = lerp(g, 0.64, ds); b = lerp(b, 0.42, ds);
     const fo = this.forest(x, z);
     const fd = 1 - 0.38 * fo * smoothstep(140, 100, h);
     r *= fd; g *= fd; b *= fd;
