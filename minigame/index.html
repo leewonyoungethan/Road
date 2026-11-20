@@ -86,10 +86,16 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .row > * { flex: 1; }
 .tag { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.pad { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; z-index: 3; pointer-events: none;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.pad button { pointer-events: auto; width: 76px; height: 76px; border-radius: 50%; border: 2px solid rgba(255,204,51,.6);
+  background: rgba(23,21,43,.55); color: var(--neon); font-size: 30px; cursor: pointer; touch-action: none; }
+.pad button:active { background: rgba(255,204,51,.3); }
 @media (prefers-reduced-motion: reduce) { #combo { transition: none; } }
 </style>
 
-<canvas id="c"></canvas>
+<canvas id="c" tabindex="0" style="outline:none"></canvas>
 
 <div class="hud" id="hud" hidden>
   <div class="blk"><small>점수</small><b id="score">0</b></div>
@@ -97,6 +103,7 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   <div class="blk r"><small>목숨</small><b id="hearts">♥♥♥</b></div>
 </div>
 <div id="combo"></div>
+<div class="pad" id="pad" hidden><button type="button" id="lb" aria-label="왼쪽 차선">◀</button><button type="button" id="rb" aria-label="오른쪽 차선">▶</button></div>
 
 <div class="overlay" id="title">
   <div class="panel">
@@ -179,11 +186,21 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
     if (!running) return;
     st.lane = Math.max(0, Math.min(LANES - 1, st.lane + d));
   }
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { move(-1); e.preventDefault(); }
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { move(1); e.preventDefault(); }
+  // e.code works regardless of keyboard layout (Korean IME turns 'a' into 'ㅁ')
+  document.addEventListener('keydown', (e) => {
+    if (!running) return;
+    const k = e.code || e.key;
+    if (k === 'ArrowLeft' || k === 'KeyA' || e.key === 'a' || e.key === 'ㅁ') { move(-1); e.preventDefault(); }
+    else if (k === 'ArrowRight' || k === 'KeyD' || e.key === 'd' || e.key === 'ㅇ') { move(1); e.preventDefault(); }
+  }, true);
+  const padPress = (d) => (e) => { e.preventDefault(); e.stopPropagation(); move(d); };
+  $('lb').addEventListener('pointerdown', padPress(-1));
+  $('rb').addEventListener('pointerdown', padPress(1));
+  document.addEventListener('pointerdown', (e) => {
+    if (!running || e.target.closest('#pad')) return;
+    e.preventDefault();
+    move(e.clientX < W / 2 ? -1 : 1);
   });
-  cv.addEventListener('pointerdown', (e) => { move(e.clientX < W / 2 ? -1 : 1); });
 
   function spawnCar() {
     const busy = new Set(st.cars.filter(c => c.y < carH() * 1.6).map(c => c.lane));
@@ -346,7 +363,8 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   let lastResult = null;
   function start() {
     newGame(); running = true; saved = false;
-    $('title').hidden = true; $('result').hidden = true; $('hud').hidden = false;
+    $('title').hidden = true; $('result').hidden = true; $('hud').hidden = false; $('pad').hidden = false;
+    try { window.focus(); cv.focus({ preventScroll: true }); } catch (e) {}
     hud();
   }
   function endGame(reason) {
@@ -368,6 +386,7 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
     $('saveBtn').disabled = false; $('nameInput').disabled = false;
     $('saveForm').hidden = false;
     try { $('nameInput').value = localStorage.getItem('nr_name') || ''; } catch (e) {}
+    $('pad').hidden = true;
     setTimeout(() => { $('hud').hidden = true; $('result').hidden = false; renderBoards(); $('nameInput').focus(); }, 700);
   }
   $('startBtn').addEventListener('click', start);
