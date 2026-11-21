@@ -274,7 +274,7 @@ function updateCamera(dt) {
     camera.position.copy(camPos);
     camera.lookAt(camLook);
   } else if (camMode === 1) {
-    v3.set(0, 1.38, 0.9); car.body.localToWorld(v3);
+    v3.set(0, 1.12, 0.15); car.body.localToWorld(v3);
     camera.position.copy(v3);
     const t = new THREE.Vector3(0, 0.6, 40); car.body.localToWorld(t);
     camera.lookAt(t);
