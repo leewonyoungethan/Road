@@ -162,7 +162,7 @@ export class Car {
     }
 
     // steering
-    const maxSteer = Math.max(0.52 / (1 + Math.abs(this.speed) * 0.045), 0.012);
+    const maxSteer = Math.max(0.55 / (1 + Math.abs(this.speed) * 0.03), 0.015);
     const targetSteer = steerIn * maxSteer;
     const rate = auto ? 4 : (steerIn === 0 ? 5 : 2.5);
     this.steer = lerp(this.steer, targetSteer, 1 - Math.exp(-rate * dt));
@@ -184,7 +184,7 @@ export class Car {
     }
     a -= 0.0011 * this.speed * Math.abs(this.speed) * Math.min(1, (58 / Math.max(limit, 1)) ** 2);
     a -= Math.sign(this.speed) * 0.18;
-    if (this.airborne) a *= 0.15;
+    if (this.airborne) a *= 0.6;
     const prev = this.speed;
     this.speed += a * dt;
     if (!auto && this.speed < -9) this.speed = -9;
@@ -220,7 +220,7 @@ export class Car {
     }
 
     // yaw / move (turn rate capped so very high speeds stay controllable)
-    const yawRate = clamp(this.speed * Math.tan(this.steer) / WB, -1.6, 1.6) * (this.airborne ? 0.25 : 1);
+    const yawRate = clamp(this.speed * Math.tan(this.steer) / WB, -1.6, 1.6) * (this.airborne ? 0.8 : 1);
     this.yaw -= yawRate * dt;
     const [nfx, nfz] = this.dir;
     this.pos.x += nfx * this.speed * dt;
@@ -257,7 +257,7 @@ export class Car {
       }
     } else {
       const ballY = this.y + this.vy * dt - 0.5 * G * dt * dt;
-      if (ballY > ty + 0.04 && Math.abs(this.speed) > 6) {
+      if (ballY > ty + 0.45 && Math.abs(this.speed) > 6) {
         this.airborne = true; this.airTime = 0;
         this.vy -= G * dt; this.y = ballY;
       } else {
