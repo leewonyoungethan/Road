@@ -88,6 +88,11 @@ ol.board li.me { outline: 1px solid var(--teal); }
 ol.board li.empty { display: block; color: var(--dim); background: none; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; justify-content: space-between; }
 .tag { font-size: 11px; letter-spacing: .12em; color: var(--dim); }
+.pwbar { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 80px); display: flex; justify-content: center; flex-wrap: wrap; gap: 6px;
+  z-index: 2; pointer-events: none; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.chip { position: relative; isolation: isolate; overflow: hidden; font: 700 13px var(--body); color: #1b1433; background: rgba(251,246,255,.75);
+  border-radius: 999px; padding: 4px 11px; font-variant-numeric: tabular-nums; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+.chip::before { content: ""; position: absolute; inset: 0; width: calc(var(--p, 1) * 100%); background: var(--c); z-index: -1; }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 </style>
 
@@ -99,6 +104,11 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   <div class="blk r"><small>목숨</small><b id="hearts">♥♥♥</b></div>
 </div>
 <div id="toast"></div>
+<div class="pwbar">
+  <span class="chip" id="pw-magnet" style="--c:#ff6b7a" hidden>자석 <b></b></span>
+  <span class="chip" id="pw-shield" style="--c:#37e2c8" hidden>무적 <b></b></span>
+  <span class="chip" id="pw-x2" style="--c:#ffc93c" hidden>코인 ×2 <b></b></span>
+</div>
 <div class="pad" id="pad" hidden>
   <button type="button" data-a="left" aria-label="왼쪽">◀</button>
   <button type="button" data-a="jump" aria-label="점프">▲</button>
@@ -115,6 +125,7 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
       <b>▲ 점프</b><span>노란 낮은 차단봉 넘기 (위로 스와이프, ↑ / W / Space)</span>
       <b>▼ 슬라이드</b><span>빨간 높은 바 밑으로 (아래로 스와이프, ↓ / S)</span>
       <b>기차</b><span>옆 선로로 피하기</span>
+      <b>아이템</b><span>자석(코인 끌어오기) · 무적(장애물 부수며 통과) · 코인 2배 · 하트(목숨 +1)</span>
       <b>속도</b><span>계속 빨라져요 (약 58 → 130 km/h, 30초마다 알림)</span>
       <b>점수</b><span>달린 거리 + 코인 1개 50점 + 완주 시 목숨당 500점</span>
     </div>
@@ -193,11 +204,22 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
 
   function newGame() {
     st = { t: 0, dist: 0, coins: 0, hearts: 3, lane: 1, px: 0, jy: 0, vy: 0, slide: 0, inv: 0, slow: 0, shake: 0,
-      obs: [], coinsArr: [], nextZ: 75, parts: [], lv: 0, wasAir: false };
+      obs: [], coinsArr: [], nextZ: 75, parts: [], lv: 0, wasAir: false, items: [], pw: { magnet: 0, shield: 0, x2: 0 }, coinPts: 0 };
   }
   const baseSpeed = () => 16 + st.t * 0.08 + st.t * st.t * 0.0002;     // m/s: ~58 km/h at start, ~130 km/h at 3:00
   const speed = () => baseSpeed() * (1 - st.slow * 0.25);
-  const score = () => Math.floor(st.dist) + st.coins * 50;
+  const score = () => Math.floor(st.dist) + st.coinPts;
+  const PW = {
+    magnet: { name: '자석', dur: 10, color: '#ff4d5e', glow: 'rgba(255,77,94,A)' },
+    shield: { name: '무적', dur: 8, color: '#37e2c8', glow: 'rgba(55,226,200,A)' },
+    x2: { name: '코인 2배', dur: 12, color: '#ffc93c', glow: 'rgba(255,201,60,A)' },
+    heart: { name: '목숨 +1', color: '#ff5d8f', glow: 'rgba(255,93,143,A)' },
+  };
+  function powerUp(k) {
+    if (k === 'heart') { st.hearts = Math.min(3, st.hearts + 1); toast('목숨 +1!'); }
+    else { st.pw[k] = PW[k].dur; toast(`${PW[k].name}! ${PW[k].dur}초`); }
+    const p = P(st.px, 1.2, ZP); burst(p.x, p.y, PW[k].color, 26);
+  }
 
   function act(a) {
     if (!running) return;
@@ -259,7 +281,12 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
       st.obs.push({ lane: lanes[i], type, z, len: L, color: ['#3aa0ff', '#37e2c8', '#ff8a3d', '#b07bff'][Math.floor(Math.random() * 4)] });
     }
     const free = lanes[nBlock];
-    if (Math.random() < 0.8) for (let i = 0; i < 6; i++) st.coinsArr.push({ lane: free, z: z - 4 + i * 3, ph: i });
+    if (Math.random() < 0.8) for (let i = 0; i < 6; i++) st.coinsArr.push({ lane: free, x: laneX(free), z: z - 4 + i * 3, ph: i });
+    if (st.t > 4 && Math.random() < 0.17) {
+      const kinds = ['magnet', 'magnet', 'shield', 'x2', 'x2'];
+      if (st.hearts < 3) kinds.push('heart', 'heart');
+      st.items.push({ lane: free, x: laneX(free), z: z - 9, kind: kinds[Math.floor(Math.random() * kinds.length)] });
+    }
     return len;
   }
 
@@ -287,6 +314,7 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
     st.vy -= 24 * dt; st.jy = Math.max(0, st.jy + st.vy * dt); if (st.jy === 0 && st.vy < 0) st.vy = 0;
     st.slide = Math.max(0, st.slide - dt);
     st.inv = Math.max(0, st.inv - dt);
+    for (const k in st.pw) st.pw[k] = Math.max(0, st.pw[k] - dt);
     st.slow = Math.max(0, st.slow - dt * 0.8);
     st.shake = Math.max(0, st.shake - dt * 3);
     const lv = Math.floor(st.t / 30);
@@ -309,6 +337,11 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
       if (a > 0.45 || b < -0.45) continue;
       const safe = (o.type === 'low' && st.jy > 0.55) || (o.type === 'high' && st.slide > 0);
       if (safe) continue;
+      if (st.pw.shield > 0) {
+        o.hit = true; st.shake = 0.35;
+        const p = P(laneX(o.lane), 1, ZP); burst(p.x, p.y, '#37e2c8', 24); burst(p.x, p.y, o.type === 'low' ? '#ffc93c' : '#ff5d8f', 12);
+        continue;
+      }
       if (st.inv > 0) continue;
       o.hit = true; st.hearts--; st.inv = 2; st.slow = 1; st.shake = 1;
       const p = P(st.px, 1, ZP); burst(p.x, p.y, '#ff5d8f', 26);
@@ -319,11 +352,17 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
 
     for (const c of st.coinsArr) {
       if (c.got) continue;
-      if (c.lane === pl && Math.abs(c.z - st.dist) < 0.9) {
-        c.got = true; st.coins++;
-        const p = P(laneX(c.lane), 0.9 + st.jy * 0.5, ZP); burst(p.x, p.y, '#ffc93c', 8);
+      const rel = c.z - st.dist;
+      if (st.pw.magnet > 0 && rel < 28 && rel > -1) { c.z -= rel * dt * 5; c.x += (st.px - c.x) * Math.min(1, dt * 7); c.fly = true; }
+      if (Math.abs(c.x - st.px) < 1.1 && Math.abs(c.z - st.dist) < (c.fly ? 1.6 : 0.9)) {
+        c.got = true; st.coins++; st.coinPts += st.pw.x2 > 0 ? 100 : 50;
+        const p = P(c.x, 0.9 + st.jy * 0.5, ZP); burst(p.x, p.y, st.pw.x2 > 0 ? '#fff3a0' : '#ffc93c', 8);
       }
     }
+    for (const it of st.items) {
+      if (!it.got && Math.abs(it.x - st.px) < 1.1 && Math.abs(it.z - st.dist) < 1.1) { it.got = true; powerUp(it.kind); }
+    }
+    st.items = st.items.filter(it => !it.got && it.z - st.dist > -ZP);
     st.coinsArr = st.coinsArr.filter(c => !c.got && c.z - st.dist > -ZP);
     for (const p of st.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.life -= dt; }
     st.parts = st.parts.filter(p => p.life > 0);
@@ -517,8 +556,8 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   function drawCoin(c, dist) {
     const zc = c.z - dist + ZP; if (zc < 0.8 || zc > VIEW) return;
     const t = performance.now() / 1000;
-    const p = P(laneX(c.lane), 0.9 + Math.sin(t * 4 + c.ph) * 0.08, zc), r = 0.3 * p.s, sx = Math.max(0.2, Math.abs(Math.cos(t * 5.5 + c.ph)));
-    const gs = P(laneX(c.lane), 0.01, zc);
+    const p = P(c.x, 0.9 + Math.sin(t * 4 + c.ph) * 0.08, zc), r = 0.3 * p.s, sx = Math.max(0.2, Math.abs(Math.cos(t * 5.5 + c.ph)));
+    const gs = P(c.x, 0.01, zc);
     cx.globalAlpha = fog(zc);
     cx.fillStyle = 'rgba(10,5,20,.35)'; cx.beginPath(); cx.ellipse(gs.x, gs.y, r * 0.8, r * 0.25, 0, 0, 7); cx.fill();
     glow(p.x, p.y, r * 2.4, 'rgba(255,200,60,A)', 0.4);
@@ -528,6 +567,41 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
     cx.fillStyle = '#f0a800'; cx.beginPath(); cx.arc(0, 0, r * 0.62, 0, 7); cx.fill();
     cx.fillStyle = 'rgba(255,255,255,.75)'; cx.beginPath(); cx.arc(-r * 0.35, -r * 0.35, r * 0.2, 0, 7); cx.fill();
     cx.restore(); cx.globalAlpha = 1;
+  }
+  function drawItem(it, dist) {
+    const zc = it.z - dist + ZP; if (zc < 0.8 || zc > VIEW) return;
+    const t = performance.now() / 1000, d = PW[it.kind];
+    const p = P(it.x, 1.15 + Math.sin(t * 3 + it.z) * 0.12, zc), r = 0.42 * p.s, gs = P(it.x, 0.01, zc);
+    cx.globalAlpha = fog(zc);
+    cx.fillStyle = 'rgba(10,5,20,.35)'; cx.beginPath(); cx.ellipse(gs.x, gs.y, r * 0.9, r * 0.28, 0, 0, 7); cx.fill();
+    glow(p.x, p.y, r * 3.2, d.glow, 0.55);
+    const g = cx.createRadialGradient(p.x - r * 0.35, p.y - r * 0.4, r * 0.08, p.x, p.y, r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, d.color); g.addColorStop(1, shade(d.color, -0.4));
+    cx.fillStyle = g; cx.beginPath(); cx.arc(p.x, p.y, r, 0, 7); cx.fill();
+    cx.strokeStyle = 'rgba(255,255,255,.85)'; cx.lineWidth = Math.max(1, r * 0.09);
+    cx.beginPath(); cx.ellipse(p.x, p.y, r * 1.35, r * 0.38, Math.sin(t * 2) * 0.5, 0, 7); cx.stroke();
+    itemIcon(it.kind, p.x, p.y, r * 0.62);
+    cx.globalAlpha = 1;
+  }
+  function itemIcon(k, x, y, r) {
+    cx.save(); cx.translate(x, y); cx.lineCap = 'round'; cx.lineJoin = 'round';
+    if (k === 'magnet') {
+      cx.strokeStyle = '#ffffff'; cx.lineWidth = r * 0.5;
+      cx.beginPath(); cx.moveTo(-r * 0.6, -r * 0.7); cx.lineTo(-r * 0.6, 0); cx.arc(0, 0, r * 0.6, Math.PI, 0, true); cx.lineTo(r * 0.6, -r * 0.7); cx.stroke();
+      cx.fillStyle = '#c9d0e0'; cx.fillRect(-r * 0.86, -r * 0.95, r * 0.52, r * 0.32); cx.fillRect(r * 0.34, -r * 0.95, r * 0.52, r * 0.32);
+    } else if (k === 'shield') {
+      cx.fillStyle = '#ffffff'; cx.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; cx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+      cx.closePath(); cx.fill();
+    } else if (k === 'x2') {
+      cx.fillStyle = '#3a2600'; cx.font = `${Math.max(8, r * 1.25)}px Bungee, Impact, sans-serif`; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.fillText('×2', 0, r * 0.08);
+    } else {
+      cx.fillStyle = '#ffffff'; cx.beginPath(); cx.moveTo(0, r * 0.75);
+      cx.bezierCurveTo(-r * 1.25, -r * 0.1, -r * 0.55, -r * 0.95, 0, -r * 0.35);
+      cx.bezierCurveTo(r * 0.55, -r * 0.95, r * 1.25, -r * 0.1, 0, r * 0.75); cx.fill();
+    }
+    cx.restore();
   }
   function limb(x, y, len, wdt, ang, color) {
     cx.save(); cx.translate(x, y); cx.rotate(ang);
@@ -575,6 +649,24 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
     }
     cx.restore();
     cx.globalAlpha = 1;
+    const t = performance.now() / 1000;
+    if (st.pw.magnet > 0) {
+      const a = (st.pw.magnet < 2 && Math.floor(t * 8) % 2) ? 0.15 : 0.5;
+      for (let i = 0; i < 2; i++) {
+        const ph = (t * 1.5 + i * 0.5) % 1;
+        cx.strokeStyle = `rgba(255,90,110,${a * (1 - ph)})`; cx.lineWidth = 2;
+        cx.beginPath(); cx.ellipse(g.x, g.y, (0.5 + ph * 1.4) * s, (0.15 + ph * 0.4) * s, 0, 0, 7); cx.stroke();
+      }
+    }
+    if (st.pw.shield > 0) {
+      const a = (st.pw.shield < 2 && Math.floor(t * 8) % 2) ? 0.2 : 1;
+      const by = base - (sliding ? 0.5 : 0.95) * s, br = (sliding ? 0.85 : 1.15) * s;
+      const sg = cx.createRadialGradient(g.x, by, br * 0.55, g.x, by, br);
+      sg.addColorStop(0, 'rgba(55,226,200,0)'); sg.addColorStop(0.85, `rgba(55,226,200,${0.35 * a})`); sg.addColorStop(1, `rgba(200,255,245,${0.8 * a})`);
+      cx.fillStyle = sg; cx.beginPath(); cx.arc(g.x, by, br, 0, 7); cx.fill();
+      cx.strokeStyle = `rgba(255,255,255,${0.5 * a})`; cx.lineWidth = 2;
+      cx.beginPath(); cx.arc(g.x, by, br * 0.85, Math.PI * 1.1 + t, Math.PI * 1.45 + t); cx.stroke();
+    }
   }
   function roundRect(x, y, w, h, r) {
     r = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -608,6 +700,7 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
       const items = [];
       for (const o of st.obs) items.push({ z: o.z - st.dist, f: () => drawObstacle(o, st.dist) });
       for (const c of st.coinsArr) items.push({ z: c.z - st.dist, f: () => drawCoin(c, st.dist) });
+      for (const it of st.items) items.push({ z: it.z - st.dist, f: () => drawItem(it, st.dist) });
       items.push({ z: 0.01, f: drawRunner });
       items.sort((a, b) => b.z - a.z);
       for (const it of items) it.f();
@@ -626,6 +719,11 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   function hud() {
     $('score').textContent = score().toLocaleString();
     $('spd').textContent = `${Math.round(speed() * 3.6)} km/h`;
+    for (const k of ['magnet', 'shield', 'x2']) {
+      const el = $('pw-' + k), v = st.pw[k];
+      el.hidden = v <= 0;
+      if (v > 0) { el.querySelector('b').textContent = Math.ceil(v); el.style.setProperty('--p', v / PW[k].dur); }
+    }
     const left = Math.max(0, DURATION - st.t);
     $('time').textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
     $('time').classList.toggle('low', left < 15);
@@ -652,12 +750,13 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
   }
   function endGame(reason) {
     running = false;
+    document.querySelectorAll('.chip').forEach((e) => { e.hidden = true; });
     const base = score();
     const bonus = reason === 'finish' ? st.hearts * 500 : 0;
     lastResult = { score: base + bonus, reason };
     $('endReason').textContent = reason === 'finish' ? '완주! 3분 생존' : `목숨을 다 썼어요 · ${Math.floor(st.t)}초 달림`;
     $('finalScore').textContent = lastResult.score.toLocaleString();
-    const rows = [['달린 거리', `${Math.floor(st.dist).toLocaleString()} m`], [`코인 ${st.coins}개`, `${(st.coins * 50).toLocaleString()}`]];
+    const rows = [['달린 거리', `${Math.floor(st.dist).toLocaleString()} m`], [`코인 ${st.coins}개`, `${st.coinPts.toLocaleString()}`]];
     if (reason === 'finish') rows.push([`완주 보너스 (♥${st.hearts})`, `${bonus.toLocaleString()}`]);
     $('breakdown').innerHTML = '';
     for (const [a, b] of rows) { const x = document.createElement('span'); x.textContent = a; const y = document.createElement('span'); y.textContent = b; $('breakdown').append(x, y); }
