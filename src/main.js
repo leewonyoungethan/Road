@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { World, STEP, LANE, CHUNK } from './world.js';
 import { Atmosphere } from './sky.js';
-import { Car, CAR_COLORS } from './car.js';
+import { Car, CAR_COLORS, CAR_MODELS, CAR_MODEL_NAMES } from './car.js';
 import { CarAudio, SOUND_NAMES } from './audio.js';
 import { Precipitation } from './weather.js';
 import { clamp, lerp, mulberry32 } from './noise.js';
@@ -139,6 +139,7 @@ addEventListener('keydown', (e) => {
     case 'KeyH': hudHidden = !hudHidden; document.body.classList.toggle('nohud', hudHidden); break;
     case 'KeyP': cycleClouds(); break;
     case 'KeyK': cycleColor(); break;
+    case 'KeyV': cycleModel(); break;
     case 'KeyL': timeFlow = !timeFlow; toast(timeFlow ? '시간 흐름 켜짐' : '시간 흐름 꺼짐'); break;
     case 'KeyN': newWorld(); break;
     case 'Equal': case 'NumpadAdd': setSpeedKmh(speedKmh * 1.15); break;
@@ -182,7 +183,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   speed: $('speed'), gear: $('gear'), dist: $('dist'), clock: $('clock'), mode: $('mode'),
   auto: $('btn-auto'), cam: $('btn-cam'), time: $('btn-time'), sound: $('btn-sound'), qual: $('btn-quality'),
-  clouds: $('btn-clouds'), slider: $('speed-slider'), speedSet: $('speed-set'), color: $('btn-color'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
+  clouds: $('btn-clouds'), slider: $('speed-slider'), speedSet: $('speed-set'), color: $('btn-color'), model: $('btn-model'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
 };
 function toast(msg) {
   ui.toast.textContent = msg; ui.toast.classList.add('show');
@@ -197,6 +198,12 @@ function setWeather(i) {
   toast(`날씨: ${WEATHER_NAMES[WEATHERS[i]]}`); refreshUI();
 }
 function cycleColor() { colorIdx = (colorIdx + 1) % CAR_COLORS.length; car.setColor(CAR_COLORS[colorIdx]); }
+function setModel(m) {
+  car.setModel(m);
+  car.y += 0.6; car.vy = 0; // drop in gently so bigger wheels don't clip the ground
+  refreshUI(); toast(`차종: ${CAR_MODEL_NAMES[m]}`);
+}
+function cycleModel() { setModel(CAR_MODELS[(CAR_MODELS.indexOf(car.model) + 1) % CAR_MODELS.length]); }
 function toggleMute() { const m = audio.cycle(); refreshUI(); toast(`소리: ${SOUND_NAMES[m]}`); }
 function resetCar() { car.placeOnRoad(car.idx + 2); toast('도로로 복귀'); }
 function setQuality(k) {
@@ -216,11 +223,14 @@ function refreshUI() {
   ui.sound.querySelector('span').textContent = SOUND_NAMES[audio.mode];
   ui.qual.querySelector('span').textContent = `화질 ${quality.name}`;
   ui.mode.textContent = autoDrive ? 'AUTO' : 'MANUAL';
+  ui.model.querySelector('span').textContent = CAR_MODEL_NAMES[car.model];
+  document.querySelectorAll('[data-car]').forEach((b) => b.classList.toggle('active', b.dataset.car === car.model));
   ui.clouds.querySelector('span').textContent = WEATHER_NAMES[WEATHERS[weatherIdx]];
   document.body.classList.toggle('manual', !autoDrive);
 }
 ui.auto.onclick = toggleAuto; ui.cam.onclick = cycleCam; ui.time.onclick = cycleTime; ui.sound.onclick = toggleMute;
-ui.clouds.onclick = cycleClouds; ui.color.onclick = cycleColor;
+ui.clouds.onclick = cycleClouds; ui.color.onclick = cycleColor; ui.model.onclick = cycleModel;
+document.querySelectorAll('[data-car]').forEach((b) => b.addEventListener('click', () => setModel(b.dataset.car)));
 ui.qual.onclick = () => { const order = ['high', 'medium', 'low']; setQuality(order[(order.indexOf(qualityKey) + 1) % 3]); };
 $('btn-new').onclick = newWorld;
 ui.seed.textContent = `#${seed} · ${world.typeName}`;
@@ -261,7 +271,7 @@ function updateCamera(dt) {
 
   if (camMode === 0) {
     const a = camYaw + orbit;
-    const dist = 7.4 + Math.abs(car.speed) * 0.02, height = 2.3 + orbitPitch * 6;
+    const dist = car.camDist + Math.abs(car.speed) * 0.02, height = car.camH + orbitPitch * 6;
     v3.set(cp.x - Math.sin(a) * dist, cp.y + height, cp.z - Math.cos(a) * dist);
     const gmin = world.groundAt(v3.x, v3.z) + 0.8;
     if (v3.y < gmin) v3.y = gmin;
@@ -274,7 +284,7 @@ function updateCamera(dt) {
     camera.position.copy(camPos);
     camera.lookAt(camLook);
   } else if (camMode === 1) {
-    v3.set(0, 1.12, 0.15); car.body.localToWorld(v3);
+    v3.set(car.hoodCam[0], car.hoodCam[1], car.hoodCam[2]); car.body.localToWorld(v3);
     camera.position.copy(v3);
     const t = new THREE.Vector3(0, 0.6, 40); car.body.localToWorld(t);
     camera.lookAt(t);
