@@ -32,16 +32,18 @@ body { background: var(--night); color: var(--ink); font-family: var(--body); ov
 .hud { position: fixed; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
   padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  pointer-events: none; font-variant-numeric: tabular-nums; z-index: 2; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
+  pointer-events: none; font-variant-numeric: tabular-nums; z-index: 2; text-shadow: 0 1px 2px rgba(0,0,0,.6), 0 2px 10px rgba(0,0,0,.5);
+  padding-bottom: 28px; background: linear-gradient(rgba(20,12,40,.55), rgba(20,12,40,0)); }
 .hud .blk { display: flex; flex-direction: column; gap: 2px; }
-.hud small { font-size: 11px; letter-spacing: .14em; color: var(--dim); }
+.hud small { font-size: 11px; letter-spacing: .14em; color: #e4def5; }
 .hud b { font-family: var(--display); font-weight: 400; font-size: clamp(20px, 4vw, 30px); line-height: 1; }
 #time { color: var(--gold); }
 #time.low { color: var(--pink); }
 #hearts { color: var(--pink); letter-spacing: 2px; }
 .hud .r { text-align: right; align-items: flex-end; }
 #toast { position: fixed; left: 50%; top: 20%; transform: translateX(-50%); font-family: var(--display); font-size: 22px; color: var(--teal);
-  opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 2; text-shadow: 0 0 18px rgba(0,0,0,.6); white-space: nowrap; }
+  opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 2; white-space: nowrap;
+  background: rgba(27,20,51,.72); padding: 6px 14px; border-radius: 999px; }
 
 .pad { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 10px; z-index: 3; pointer-events: none;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
@@ -100,6 +102,12 @@ ol.board li.empty { display: block; color: var(--dim); background: none; }
 .char small { font-size: 10px; color: var(--dim); line-height: 1.25; text-align: center; font-weight: 400; }
 .char[aria-pressed="true"] { border-color: var(--gold); background: rgba(255,201,60,.12); }
 .char[aria-pressed="true"] small { color: var(--gold); }
+.maps { margin-top: 8px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.map { display: flex; flex-direction: column; gap: 4px; align-items: stretch; padding: 4px 4px 6px; border-radius: 10px; cursor: pointer; min-width: 0;
+  background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.1); color: var(--ink); font: 600 11px var(--body); }
+.map i { display: block; height: 38px; border-radius: 6px; }
+.map span { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map[aria-pressed="true"] { border-color: var(--gold); background: rgba(255,201,60,.12); color: var(--gold); }
 ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 </style>
@@ -141,6 +149,10 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
       <div class="row"><h2>캐릭터</h2><span class="tag" id="charDesc"></span></div>
       <div class="chars" id="chars"></div>
     </div>
+    <div>
+      <div class="row"><h2>맵</h2><span class="tag" id="mapName"></span></div>
+      <div class="maps" id="maps"></div>
+    </div>
     <button class="go" id="startBtn" type="button">출발!</button>
     <div>
       <div class="row"><h2>TOP 10</h2><span class="tag" id="boardSrc1">불러오는 중…</span></div>
@@ -181,11 +193,54 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
     { id: 'coco', name: '코코', perk: 'jump', desc: '점프가 더 높고 길어요', top: '#9b6bff', topHi: '#c0a2ff', topLo: '#7448d6', pack: '#37e2c8', packLo: '#22b09a', pants: '#1f2240', pants2: '#2a2e55', hair: '#1b1420', hat: '#ffd1e6', acc: 'ears' },
     { id: 'leo', name: '레오', perk: 'tough', desc: '부딪혀도 덜 느려지고 무적이 길어요', top: '#ff5a4e', topHi: '#ff8f84', topLo: '#cc3a30', pack: '#34344a', packLo: '#1d1d29', pants: '#232a3a', pants2: '#2f384d', hair: '#141018', hat: '#ffffff', acc: 'band' },
   ];
+
+  const MAPS = {
+    dusk: { name: '노을 도시', sky: ['#1a1240', '#5a2a78', '#d4567a', '#ffad66'], stars: 1,
+      sun: { top: '#fff0b8', bottom: '#ff8a5c', glow: 'rgba(255,170,110,A)', y: 0.94, r: 0.075 },
+      cloud: ['rgba(255,190,200,.16)', 'rgba(120,60,140,.22)'], skyline: 'city',
+      layers: [['#4a2b68', 'rgba(255,190,120,.35)'], ['#2c1c46', 'rgba(255,201,60,.7)']],
+      haze: 'rgba(255,150,120,A)', hazeA: 0.45, ground: ['#6b4a6a', '#3e2c48', '#231a30'],
+      wall: ['#4b3463', '#563b70', '#8f74a8'], wallH: 1.8, murals: ['#37e2c8', '#ff5d8f', '#ffc93c', '#7b8cff'], muralDark: '#2a1d3a',
+      bed: '#47344f', sleeper: ['#9a7258', '#5a3d33'], rail: ['#a59cb8', 'rgba(255,230,210,.85)'], deco: 'lamp',
+      lamp: { pool: 'rgba(255,200,120,.35)', glow: 'rgba(255,210,140,A)', bulb: '#fff1c8', pole: '#1c1428' }, weather: null, vign: '15,8,30' },
+    neon: { name: '네온 밤', sky: ['#04051a', '#0d1240', '#2a1a5e', '#5a2a7a'], stars: 1.8,
+      sun: { top: '#f6f7ff', bottom: '#c9cdea', glow: 'rgba(170,180,255,A)', y: 0.42, r: 0.05, moon: true },
+      cloud: ['rgba(120,130,210,.12)', 'rgba(10,10,40,.35)'], skyline: 'city',
+      layers: [['#1b1645', 'rgba(110,200,255,.5)'], ['#0d0a26', 'rgba(255,70,200,.8)']],
+      haze: 'rgba(140,60,220,A)', hazeA: 0.4, ground: ['#2a2052', '#161233', '#0a091a'],
+      wall: ['#1a1640', '#201b4c', '#ff3fd0'], wallH: 1.8, murals: ['#00f0ff', '#ff3fd0', '#b6ff3c', '#ffe600'], muralDark: '#0a091a',
+      bed: '#1d1838', sleeper: ['#4a4272', '#28224a'], rail: ['#8c9cff', 'rgba(200,225,255,.95)'], deco: 'lamp',
+      lamp: { pool: 'rgba(0,240,255,.35)', glow: 'rgba(0,240,255,A)', bulb: '#d8fdff', pole: '#0a091a' }, weather: null, vign: '5,4,20' },
+    desert: { name: '사막 협곡', sky: ['#3a8ee6', '#6fb3f0', '#bfe0f5', '#ffe2b8'], stars: 0,
+      sun: { top: '#ffffff', bottom: '#fff3c0', glow: 'rgba(255,250,215,A)', y: 0.3, r: 0.06 },
+      cloud: ['rgba(255,255,255,.6)', 'rgba(255,255,255,.3)'], skyline: 'mesa',
+      layers: [['#dc9466'], ['#b9643c']], band: 'rgba(255,220,170,.35)',
+      haze: 'rgba(255,225,190,A)', hazeA: 0.6, ground: ['#ecc290', '#d9a068', '#b57848'],
+      wall: ['#c7814f', '#cf8b58', '#e9b98a'], wallH: 1.2, murals: ['#b06a3e', '#dba573'], muralDark: '#9c5a34',
+      bed: '#bf916c', sleeper: ['#7d553a', '#503424'], rail: ['#c9c2c0', 'rgba(255,255,255,.95)'], deco: 'cactus', weather: null, vign: '90,45,15' },
+    snow: { name: '눈 덮인 산', sky: ['#6f9ed6', '#a5c5ea', '#d9e8f7', '#f4f7fb'], stars: 0,
+      sun: { top: '#ffffff', bottom: '#ffefd2', glow: 'rgba(255,255,240,A)', y: 0.45, r: 0.055 },
+      cloud: ['rgba(255,255,255,.55)', 'rgba(220,230,245,.4)'], skyline: 'mountain', caps: '#ffffff',
+      layers: [['#a3b6cf'], ['#6f86a8']],
+      haze: 'rgba(240,245,255,A)', hazeA: 0.75, ground: ['#eef3fa', '#dce6f2', '#c3d1e3'],
+      wall: ['#d3deeb', '#dce5f0', '#ffffff'], wallH: 1.0, murals: null, muralDark: '#9fb2cc',
+      bed: '#b6c3d4', sleeper: ['#735b4a', '#4a3a30'], rail: ['#7d8aa0', 'rgba(255,255,255,.95)'], deco: 'pine', weather: 'snow', vign: '50,70,110' },
+    sakura: { name: '벚꽃 공원', sky: ['#78c2ff', '#ade0ff', '#ffe4f0', '#ffd3e4'], stars: 0,
+      sun: { top: '#ffffff', bottom: '#fff1d8', glow: 'rgba(255,245,235,A)', y: 0.35, r: 0.055 },
+      cloud: ['rgba(255,255,255,.65)', 'rgba(255,230,240,.4)'], skyline: 'trees',
+      layers: [['#f2b0ca'], ['#de84aa']],
+      haze: 'rgba(255,225,238,A)', hazeA: 0.55, ground: ['#b7de96', '#8fc66f', '#6aa352'],
+      wall: ['#5e9e4c', '#67a854', '#86c46e'], wallH: 0.9, murals: ['#ff9ec7', '#fff2a8', '#ffffff'], muralDark: '#4f8a40',
+      bed: '#cdb79c', sleeper: ['#8c6649', '#5f4331'], rail: ['#b2aabc', 'rgba(255,255,255,.95)'], deco: 'sakura', weather: 'petals', vign: '80,40,70' },
+  };
+  let mapId = 'dusk';
+  try { const sm = localStorage.getItem('rd_map'); if (MAPS[sm]) mapId = sm; } catch (e) {}
+  const M = () => MAPS[mapId];
   let charId = 'mint';
   try { const saved = localStorage.getItem('rd_char'); if (CHARS.some(c => c.id === saved)) charId = saved; } catch (e) {}
   const CH = () => CHARS.find(c => c.id === charId) || CHARS[0];
   const perk = (p) => CH().perk === p;
-  let W = 0, H = 0, DPR = 1, HOR = 0, F = 1, CAMH = 1, stars = [], clouds = [], layers = [], vign = null;
+  let W = 0, H = 0, DPR = 1, HOR = 0, F = 1, CAMH = 1, stars = [], clouds = [], layers = [], vign = null, flakes = [], camVX = 0;
 
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -196,13 +251,43 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
     const sP = Math.min(W * 0.86 / (LANE * 3 + 0.6), H * 0.11);   // pixels per metre at the player
     CAMH = (H * 0.78 - HOR) / sP;
     F = sP * ZP;
-    stars = Array.from({ length: 80 }, () => ({ x: Math.random() * W, y: Math.random() * HOR * 0.6, r: Math.random() * 1.4 + 0.5, tw: Math.random() * 6 }));
+    buildScenery();
+  }
+  function buildScenery() {
+    if (!W) return;
+    const m = M();
+    stars = Array.from({ length: 90 }, () => ({ x: Math.random() * W, y: Math.random() * HOR * 0.6, r: Math.random() * 1.4 + 0.5, tw: Math.random() * 6 }));
     clouds = Array.from({ length: 6 }, () => ({ x: Math.random() * W, y: HOR * (0.2 + Math.random() * 0.5), w: 70 + Math.random() * 150, sp: 4 + Math.random() * 10 }));
-    layers = [mkCity(0.13, '#4a2b68', 'rgba(255,190,120,.35)', 0.05), mkCity(0.09, '#2c1c46', 'rgba(255,201,60,.7)', 0.14)];
+    flakes = Array.from({ length: m.weather === 'snow' ? 110 : 60 }, () => ({ x: Math.random() * W, y: Math.random() * H, vy: 40 + Math.random() * 70, vx: -10 + Math.random() * 20, r: 1.2 + Math.random() * 2.4, ph: Math.random() * 6, rot: Math.random() * 6, vr: -3 + Math.random() * 6 }));
+    layers = m.layers.map((L, i) => mkLayer(m.skyline, i, L[0], L[1], i ? 0.14 : 0.05, m));
     vign = document.createElement('canvas'); vign.width = W; vign.height = H;
     const vc = vign.getContext('2d'), vg = vc.createRadialGradient(W / 2, H * 0.55, Math.min(W, H) * 0.35, W / 2, H * 0.55, Math.hypot(W, H) * 0.62);
-    vg.addColorStop(0, 'rgba(15,8,30,0)'); vg.addColorStop(1, 'rgba(15,8,30,.6)');
+    vg.addColorStop(0, `rgba(${m.vign},0)`); vg.addColorStop(1, `rgba(${m.vign},.55)`);
     vc.fillStyle = vg; vc.fillRect(0, 0, W, H);
+  }
+  function mkLayer(type, i, color, win, par, m) {
+    if (type === 'city') return Object.assign(mkCity(i ? 0.09 : 0.13, color, win, par), { type });
+    if (type === 'trees') {
+      const arr = []; let x = -80;
+      while (x < W + 80) { const r = 14 + Math.random() * (i ? 16 : 22); arr.push({ x, r, h: H * 0.02 + r * (i ? 0.3 : 0.9) + Math.random() * 10 }); x += r * 0.9; }
+      return { type, arr, color, par };
+    }
+    const pts = [], peaks = [], tops = []; let x = -80;
+    if (type === 'mesa') {
+      while (x < W + 80) {
+        const w = 50 + Math.random() * 130, h = H * (0.03 + Math.random() * (i ? 0.06 : 0.11)), lo = H * 0.012;
+        pts.push([x, HOR - lo], [x + 10, HOR - h], [x + w - 10, HOR - h], [x + w, HOR - lo]); tops.push([x + 10, HOR - h, w - 20]);
+        x += w + Math.random() * 40;
+      }
+    } else {
+      pts.push([x, HOR - H * 0.02]);
+      while (x < W + 80) {
+        const w = 40 + Math.random() * 80, h = H * (0.05 + Math.random() * (i ? 0.07 : 0.14));
+        pts.push([x + w / 2, HOR - h], [x + w, HOR - H * (0.02 + Math.random() * 0.03)]); peaks.push([x + w / 2, HOR - h, h * 0.9]);
+        x += w;
+      }
+    }
+    return { type, pts, peaks, tops, color, par, caps: type === 'mountain' ? m.caps : null, band: type === 'mesa' ? m.band : null };
   }
   function mkCity(hmax, color, win, par) {
     const arr = []; let x = -80;
@@ -398,7 +483,6 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
   }
   const fog = (zc) => Math.max(0, Math.min(1, 1 - (zc - 90) / 40));
   const WALLX = LANE * 1.5 + 1.7;
-  const MURALS = ['#37e2c8', '#ff5d8f', '#ffc93c', '#7b8cff'];
   const hash = (n) => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
 
   function glow(x, y, r, color, a) {
@@ -409,107 +493,162 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
   }
 
   function drawSky(now) {
+    const m = M();
     const g = cx.createLinearGradient(0, 0, 0, HOR);
-    g.addColorStop(0, '#1a1240'); g.addColorStop(0.45, '#5a2a78'); g.addColorStop(0.8, '#d4567a'); g.addColorStop(1, '#ffad66');
+    g.addColorStop(0, m.sky[0]); g.addColorStop(0.45, m.sky[1]); g.addColorStop(0.8, m.sky[2]); g.addColorStop(1, m.sky[3]);
     cx.fillStyle = g; cx.fillRect(-20, -20, W + 40, HOR + 21);
-    for (const s of stars) {
-      cx.globalAlpha = (0.35 + 0.35 * Math.sin(now / 600 + s.tw)) * (1 - s.y / (HOR * 0.6));
+    if (m.stars) for (const s of stars) {
+      cx.globalAlpha = Math.min(1, (0.35 + 0.35 * Math.sin(now / 600 + s.tw)) * (1 - s.y / (HOR * 0.6)) * m.stars);
       cx.fillStyle = '#fff'; cx.fillRect(s.x, s.y, s.r, s.r);
     }
     cx.globalAlpha = 1;
-    const sx = W * 0.7 - camX * 2, sy = HOR - Math.min(W, H) * 0.02, sr = Math.min(W, H) * 0.075;
-    glow(sx, sy, sr * 4, 'rgba(255,170,110,A)', 0.55);
+    const sun = m.sun, sx = W * 0.7 - camX * 2, sy = HOR * sun.y, sr = Math.min(W, H) * sun.r;
+    glow(sx, sy, sr * 4, sun.glow, 0.55);
     const sg = cx.createLinearGradient(0, sy - sr, 0, sy + sr);
-    sg.addColorStop(0, '#fff0b8'); sg.addColorStop(1, '#ff8a5c');
+    sg.addColorStop(0, sun.top); sg.addColorStop(1, sun.bottom);
     cx.fillStyle = sg; cx.beginPath(); cx.arc(sx, sy, sr, 0, 7); cx.fill();
+    if (sun.moon) { cx.fillStyle = 'rgba(150,150,190,.35)'; cx.beginPath(); cx.arc(sx - sr * 0.3, sy - sr * 0.2, sr * 0.22, 0, 7); cx.arc(sx + sr * 0.25, sy + sr * 0.3, sr * 0.15, 0, 7); cx.fill(); }
     for (const c of clouds) {
       const x = ((c.x + now / 1000 * c.sp - camX * 3) % (W + c.w * 2) + (W + c.w * 2)) % (W + c.w * 2) - c.w;
-      cx.fillStyle = 'rgba(255,190,200,.16)';
+      cx.fillStyle = m.cloud[0];
       cx.beginPath(); cx.ellipse(x, c.y, c.w, c.w * 0.16, 0, 0, 7); cx.fill();
-      cx.fillStyle = 'rgba(120,60,140,.22)';
+      cx.fillStyle = m.cloud[1];
       cx.beginPath(); cx.ellipse(x + c.w * 0.1, c.y + c.w * 0.07, c.w * 0.8, c.w * 0.1, 0, 0, 7); cx.fill();
     }
     for (const L of layers) {
       const off = -camX * L.par * 30;
-      for (const b of L.arr) {
-        const x = b.x + off;
-        if (x + b.w < -5 || x > W + 5) continue;
-        cx.fillStyle = L.color; cx.fillRect(x, HOR - b.h, b.w, b.h + 1);
-        if (b.ant) { cx.fillRect(x + b.w / 2 - 1, HOR - b.h - 14, 2, 14); cx.fillStyle = (now / 500 | 0) % 2 ? '#ff4060' : '#7a2030'; cx.fillRect(x + b.w / 2 - 2, HOR - b.h - 16, 4, 3); }
-        cx.fillStyle = L.win;
-        for (const [wx, wy] of b.wins) cx.fillRect(x + wx, HOR - b.h + wy, 3, 3);
+      cx.fillStyle = L.color;
+      if (L.type === 'city') {
+        for (const b of L.arr) {
+          const x = b.x + off;
+          if (x + b.w < -5 || x > W + 5) continue;
+          cx.fillStyle = L.color; cx.fillRect(x, HOR - b.h, b.w, b.h + 1);
+          if (b.ant) { cx.fillRect(x + b.w / 2 - 1, HOR - b.h - 14, 2, 14); cx.fillStyle = (now / 500 | 0) % 2 ? '#ff4060' : '#7a2030'; cx.fillRect(x + b.w / 2 - 2, HOR - b.h - 16, 4, 3); }
+          cx.fillStyle = L.win;
+          for (const [wx, wy] of b.wins) cx.fillRect(x + wx, HOR - b.h + wy, 3, 3);
+        }
+      } else if (L.type === 'trees') {
+        for (const b of L.arr) { cx.beginPath(); cx.arc(b.x + off, HOR - b.h, b.r, 0, 7); cx.fill(); }
+        cx.fillRect(-20, HOR - H * 0.02, W + 40, H * 0.02 + 1);
+      } else {
+        cx.beginPath(); cx.moveTo(L.pts[0][0] + off, HOR + 1);
+        for (const [x, y] of L.pts) cx.lineTo(x + off, y);
+        cx.lineTo(L.pts[L.pts.length - 1][0] + off, HOR + 1); cx.closePath(); cx.fill();
+        if (L.caps) {
+          cx.fillStyle = L.caps;
+          for (const [x, y, hh] of L.peaks) { cx.beginPath(); cx.moveTo(x + off, y); cx.lineTo(x + off - hh * 0.32, y + hh * 0.28); cx.lineTo(x + off - hh * 0.08, y + hh * 0.22); cx.lineTo(x + off + hh * 0.05, y + hh * 0.3); cx.lineTo(x + off + hh * 0.3, y + hh * 0.26); cx.closePath(); cx.fill(); }
+        }
+        if (L.band) { cx.fillStyle = L.band; for (const [x, y, w] of L.tops) cx.fillRect(x + off, y + 6, w, 4); }
       }
     }
     const hz = cx.createLinearGradient(0, HOR - H * 0.08, 0, HOR);
-    hz.addColorStop(0, 'rgba(255,150,120,0)'); hz.addColorStop(1, 'rgba(255,150,120,.45)');
+    hz.addColorStop(0, m.haze.replace('A', 0)); hz.addColorStop(1, m.haze.replace('A', m.hazeA));
     cx.fillStyle = hz; cx.fillRect(-20, HOR - H * 0.08, W + 40, H * 0.08);
   }
 
+  function drawDeco(type, x, z) {
+    const b = P(x, 0, z), s = b.s;
+    if (type === 'cactus') {
+      cx.fillStyle = '#3f8f4f';
+      roundRect(b.x - 0.25 * s, b.y - 3.2 * s, 0.5 * s, 3.2 * s, 0.25 * s); cx.fill();
+      roundRect(b.x - 0.95 * s, b.y - 2.3 * s, 0.4 * s, 1.1 * s, 0.2 * s); cx.fill();
+      roundRect(b.x - 0.95 * s, b.y - 1.45 * s, 0.9 * s, 0.35 * s, 0.17 * s); cx.fill();
+      roundRect(b.x + 0.55 * s, b.y - 2.7 * s, 0.4 * s, 1.2 * s, 0.2 * s); cx.fill();
+      roundRect(b.x + 0.05 * s, b.y - 1.85 * s, 0.9 * s, 0.35 * s, 0.17 * s); cx.fill();
+      cx.fillStyle = 'rgba(255,255,255,.18)'; cx.fillRect(b.x - 0.12 * s, b.y - 3 * s, 0.08 * s, 2.8 * s);
+    } else if (type === 'pine') {
+      cx.fillStyle = '#5a3d2c'; cx.fillRect(b.x - 0.15 * s, b.y - 0.9 * s, 0.3 * s, 0.9 * s);
+      for (let i = 0; i < 3; i++) {
+        const y0 = b.y - (0.7 + i * 1.1) * s, w = (1.4 - i * 0.35) * s, h = 1.6 * s;
+        cx.fillStyle = '#2f6a55'; cx.beginPath(); cx.moveTo(b.x, y0 - h); cx.lineTo(b.x + w, y0); cx.lineTo(b.x - w, y0); cx.fill();
+        cx.fillStyle = '#ffffff'; cx.beginPath(); cx.moveTo(b.x, y0 - h); cx.lineTo(b.x + w * 0.4, y0 - h * 0.6); cx.lineTo(b.x - w * 0.4, y0 - h * 0.6); cx.fill();
+      }
+    } else if (type === 'sakura') {
+      cx.strokeStyle = '#6b4a3a'; cx.lineWidth = Math.max(1, 0.28 * s); cx.lineCap = 'round';
+      cx.beginPath(); cx.moveTo(b.x, b.y); cx.lineTo(b.x, b.y - 2.6 * s); cx.lineTo(b.x - 0.6 * s, b.y - 3.4 * s); cx.moveTo(b.x, b.y - 2.4 * s); cx.lineTo(b.x + 0.7 * s, b.y - 3.3 * s); cx.stroke();
+      const blobs = [[0, 3.7, 1.25, '#f7b6cf'], [-0.9, 3.3, 0.9, '#f3a2c2'], [0.95, 3.3, 0.95, '#f9c4d8'], [0.1, 4.4, 0.8, '#fcd3e2']];
+      for (const [dx, dy, r, c] of blobs) { cx.fillStyle = c; cx.beginPath(); cx.arc(b.x + dx * s, b.y - dy * s, r * s, 0, 7); cx.fill(); }
+    } else {
+      const m = M(), sg = Math.sign(x);
+      const top = P(x, 4.4, z), arm = P(x - sg * 0.9, 4.4, z), pool = P(x - sg * 1.2, 0, z);
+      const f = cx.globalAlpha;
+      cx.globalAlpha = f * 0.5;
+      cx.fillStyle = m.lamp.pool; cx.beginPath(); cx.ellipse(pool.x, pool.y, 1.6 * pool.s, 0.45 * pool.s, 0, 0, 7); cx.fill();
+      cx.globalAlpha = f;
+      cx.strokeStyle = m.lamp.pole; cx.lineWidth = Math.max(1, 0.14 * s);
+      cx.beginPath(); cx.moveTo(b.x, b.y); cx.lineTo(top.x, top.y); cx.lineTo(arm.x, arm.y); cx.stroke();
+      glow(arm.x, arm.y + 0.1 * arm.s, 1.3 * arm.s, m.lamp.glow, 0.55);
+      cx.fillStyle = m.lamp.bulb; cx.beginPath(); cx.arc(arm.x, arm.y + 0.08 * arm.s, Math.max(1.5, 0.14 * arm.s), 0, 7); cx.fill();
+    }
+  }
+
   function drawScene(dist, now) {
+    const m = M();
     drawSky(now);
     const gg = cx.createLinearGradient(0, HOR, 0, H);
-    gg.addColorStop(0, '#6b4a6a'); gg.addColorStop(0.35, '#3e2c48'); gg.addColorStop(1, '#231a30');
+    gg.addColorStop(0, m.ground[0]); gg.addColorStop(0.35, m.ground[1]); gg.addColorStop(1, m.ground[2]);
     cx.fillStyle = gg; cx.fillRect(-20, HOR, W + 40, H - HOR + 20);
 
     const zNear = Math.max(0.8, F * CAMH / (H + 40 - HOR));
-    // side walls with mural panels
-    const seg = 6, wo = dist % seg;
+    // roadside decorations (behind the walls when they stand outside them)
+    const decoX = m.deco === 'lamp' ? WALLX - 0.4 : WALLX + 1.6;
+    const poff = dist % 12;
+    for (let z = VIEW - poff; z > zNear; z -= 12) {
+      cx.globalAlpha = fog(z);
+      for (const sx of [-decoX, decoX]) drawDeco(m.deco, sx, z);
+    }
+    cx.globalAlpha = 1;
+    // side walls with panels
+    const seg = 6, wo = dist % seg, wh = m.wallH;
     for (let z = VIEW - wo; z > zNear - seg; z -= seg) {
       const z0 = Math.max(zNear, z), z1 = z + seg; if (z1 <= z0) continue;
       const idx = Math.floor((z + dist - ZP) / seg + 1000);
       cx.globalAlpha = fog(z0);
       for (const side of [-1, 1]) {
         const xw = side * WALLX;
-        quad(P(xw, 0, z0), P(xw, 1.8, z0), P(xw, 1.8, z1), P(xw, 0, z1), idx % 2 ? '#4b3463' : '#563b70');
-        if (hash(idx * 3 + side) > 0.55) {
-          const c = MURALS[Math.floor(hash(idx + side * 7) * 4)];
-          quad(P(xw, 0.4, z0 + 0.8), P(xw, 1.4, z0 + 0.8), P(xw, 1.4, z1 - 0.8), P(xw, 0.4, z1 - 0.8), c);
-          quad(P(xw, 0.75, z0 + 1.2), P(xw, 1.05, z0 + 1.2), P(xw, 1.05, z1 - 1.2), P(xw, 0.75, z1 - 1.2), '#2a1d3a');
+        quad(P(xw, 0, z0), P(xw, wh, z0), P(xw, wh, z1), P(xw, 0, z1), idx % 2 ? m.wall[0] : m.wall[1]);
+        if (m.murals && hash(idx * 3 + side) > 0.55) {
+          const c = m.murals[Math.floor(hash(idx + side * 7) * m.murals.length)];
+          quad(P(xw, wh * 0.22, z0 + 0.8), P(xw, wh * 0.78, z0 + 0.8), P(xw, wh * 0.78, z1 - 0.8), P(xw, wh * 0.22, z1 - 0.8), c);
+          quad(P(xw, wh * 0.42, z0 + 1.2), P(xw, wh * 0.58, z0 + 1.2), P(xw, wh * 0.58, z1 - 1.2), P(xw, wh * 0.42, z1 - 1.2), m.muralDark);
         }
-        quad(P(xw, 1.8, z0), P(xw, 1.95, z0), P(xw, 1.95, z1), P(xw, 1.8, z1), '#8f74a8');
+        quad(P(xw, wh, z0), P(xw, wh + 0.15, z0), P(xw, wh + 0.15, z1), P(xw, wh, z1), m.wall[2]);
       }
     }
     cx.globalAlpha = 1;
-    // ballast beds
     for (let l = 0; l < 3; l++) {
       const x = laneX(l);
-      quad(P(x - 1.15, 0, zNear), P(x + 1.15, 0, zNear), P(x + 1.15, 0, VIEW), P(x - 1.15, 0, VIEW), '#47344f');
+      quad(P(x - 1.15, 0, zNear), P(x + 1.15, 0, zNear), P(x + 1.15, 0, VIEW), P(x - 1.15, 0, VIEW), m.bed);
     }
-    // sleepers with a lit top and dark front edge
     const off = dist % 2;
     for (let z = VIEW - off; z > zNear; z -= 2) {
       cx.globalAlpha = fog(z);
       for (let l = 0; l < 3; l++) {
         const x = laneX(l);
-        quad(P(x - 1, 0.08, z), P(x + 1, 0.08, z), P(x + 1, 0.08, z + 0.5), P(x - 1, 0.08, z + 0.5), '#9a7258');
-        quad(P(x - 1, 0, z), P(x + 1, 0, z), P(x + 1, 0.08, z), P(x - 1, 0.08, z), '#5a3d33');
+        quad(P(x - 1, 0.08, z), P(x + 1, 0.08, z), P(x + 1, 0.08, z + 0.5), P(x - 1, 0.08, z + 0.5), m.sleeper[0]);
+        quad(P(x - 1, 0, z), P(x + 1, 0, z), P(x + 1, 0.08, z), P(x - 1, 0.08, z), m.sleeper[1]);
       }
     }
     cx.globalAlpha = 1;
-    // steel rails
     for (let l = 0; l < 3; l++) for (const s of [-0.72, 0.72]) {
       const x = laneX(l) + s;
-      quad(P(x - 0.07, 0.12, zNear), P(x + 0.07, 0.12, zNear), P(x + 0.07, 0.12, VIEW), P(x - 0.07, 0.12, VIEW), '#a59cb8');
+      quad(P(x - 0.07, 0.12, zNear), P(x + 0.07, 0.12, zNear), P(x + 0.07, 0.12, VIEW), P(x - 0.07, 0.12, VIEW), m.rail[0]);
       const a = P(x - 0.02, 0.13, zNear), b = P(x - 0.02, 0.13, VIEW);
-      cx.strokeStyle = 'rgba(255,230,210,.85)'; cx.lineWidth = 1;
+      cx.strokeStyle = m.rail[1]; cx.lineWidth = 1;
       cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke();
     }
-    // lamp posts with light pools
-    const poff = dist % 12;
-    for (let z = VIEW - poff; z > zNear; z -= 12) {
-      const f = fog(z);
-      for (const sx of [-WALLX + 0.4, WALLX - 0.4]) {
-        const a = P(sx, 0, z), b = P(sx, 4.4, z), arm = P(sx - Math.sign(sx) * 0.9, 4.4, z), pool = P(sx - Math.sign(sx) * 1.2, 0, z);
-        cx.globalAlpha = f * 0.5;
-        cx.fillStyle = 'rgba(255,200,120,.35)'; cx.beginPath(); cx.ellipse(pool.x, pool.y, 1.6 * pool.s, 0.45 * pool.s, 0, 0, 7); cx.fill();
-        cx.globalAlpha = f;
-        cx.strokeStyle = '#1c1428'; cx.lineWidth = Math.max(1, 0.14 * a.s);
-        cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.lineTo(arm.x, arm.y); cx.stroke();
-        glow(arm.x, arm.y + 0.1 * arm.s, 1.3 * arm.s, 'rgba(255,210,140,A)', 0.55);
-        cx.fillStyle = '#fff1c8'; cx.beginPath(); cx.arc(arm.x, arm.y + 0.08 * arm.s, Math.max(1.5, 0.14 * arm.s), 0, 7); cx.fill();
-      }
+  }
+
+  function drawWeather(dt, v) {
+    const w = M().weather; if (!w) return;
+    const fall = 1 + v / 30;
+    for (const f of flakes) {
+      f.y += f.vy * dt * fall; f.x += (f.vx + Math.sin(f.y / 40 + f.ph) * 20) * dt - camVX * dt * 30; f.rot += f.vr * dt;
+      if (f.y > H + 10) { f.y = -10; f.x = Math.random() * W; }
+      if (f.x < -10) f.x += W + 20; else if (f.x > W + 10) f.x -= W + 20;
+      if (w === 'snow') { cx.fillStyle = 'rgba(255,255,255,.85)'; cx.beginPath(); cx.arc(f.x, f.y, f.r, 0, 7); cx.fill(); }
+      else { cx.save(); cx.translate(f.x, f.y); cx.rotate(f.rot); cx.fillStyle = f.r > 2.6 ? '#ffc2d8' : '#ffa8c8'; cx.beginPath(); cx.ellipse(0, 0, f.r * 1.4, f.r * 0.8, 0, 0, 7); cx.fill(); cx.restore(); }
     }
-    cx.globalAlpha = 1;
   }
 
   function shade(hex, k) {
@@ -739,7 +878,9 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
     const now = performance.now();
     cx.save();
     if (st && st.shake > 0) cx.translate((Math.random() - .5) * 10 * st.shake, (Math.random() - .5) * 10 * st.shake);
+    const pcx = camX;
     if (st) camX += (st.px * 0.7 - camX) * Math.min(1, dt * 8); else camX = 0;
+    camVX = dt > 0 ? (camX - pcx) / dt : 0;
     const dist = st ? st.dist : (idleDist += dt * 8);
     drawScene(dist, now);
     if (st) {
@@ -755,6 +896,7 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
       if (running) speedLines(speed());
     }
     cx.restore();
+    drawWeather(dt, st && running ? speed() : 6);
     if (vign) cx.drawImage(vign, 0, 0, W, H);
     if (st) {
       cx.fillStyle = 'rgba(255,255,255,.1)'; cx.fillRect(0, 0, W, 4);
@@ -814,6 +956,23 @@ ol.board li .dot { display: inline-block; width: 8px; height: 8px; border-radius
     }
     cx = mainCx;
   }
+
+  // ---------- map picker ----------
+  const mapBtns = Object.entries(MAPS).map(([id, m]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'map'; b.id = 'map-' + id;
+    const sw = document.createElement('i');
+    sw.style.background = `linear-gradient(${m.sky[0]}, ${m.sky[2]} 50%, ${m.layers[1][0]} 50%, ${m.layers[1][0]} 62%, ${m.ground[0]} 62%, ${m.ground[2]})`;
+    const nm = document.createElement('span'); nm.textContent = m.name;
+    b.append(sw, nm);
+    b.addEventListener('click', () => { mapId = id; try { localStorage.setItem('rd_map', id); } catch (e) {} buildScenery(); syncMaps(); });
+    $('maps').append(b);
+    return { id, b };
+  });
+  function syncMaps() {
+    for (const k of mapBtns) k.b.setAttribute('aria-pressed', String(k.id === mapId));
+    $('mapName').textContent = M().name;
+  }
+  syncMaps();
 
   // ---------- flow ----------
   let lastResult = null;
