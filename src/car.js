@@ -9,13 +9,14 @@ let WR = 0.35;        // wheel radius
 const RAIL = 55;      // m/s (~200 km/h): above this the car locks to the road
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
+  bike: { wb: 1.45, track: 0.2, wr: 0.31, tyreW: 0.16, camDist: 5.4, camH: 1.8, hood: [0, 1.42, -0.05] },
 };
 
 // Lofted body: superellipse cross-sections along z; archFn raises the floor line to cut wheel arches
@@ -113,7 +114,7 @@ export class Car {
     try { localStorage.setItem('wr-car', name); } catch {}
     // clear previous model
     for (const o of [...this.body.children]) { this.body.remove(o); o.traverse((c) => c.geometry && c.geometry.dispose()); }
-    for (const w of this.wheels) { this.group.remove(w.pivot); w.pivot.traverse((c) => c.geometry && c.geometry.dispose()); }
+    for (const w of this.wheels) { w.pivot.parent && w.pivot.parent.remove(w.pivot); w.pivot.traverse((c) => c.geometry && c.geometry.dispose()); }
     this.wheels = []; this.beams = [];
     const D = MODEL_DIMS[name];
     WB = D.wb; TRACK = D.track; WR = D.wr;
@@ -121,7 +122,9 @@ export class Car {
     this.fz = WB / 2 + 0.05; this.rz = -WB / 2 + 0.05;
     if (name === 'sports') this._buildSports();
     else if (name === 'suv') this._buildSUV();
-    else this._buildTruck();
+    else if (name === 'truck') this._buildTruck();
+    else this._buildBike();
+    this.lean = 0;
   }
 
   _arch(radius) {
@@ -315,6 +318,86 @@ export class Car {
     this._lights(0.66, 1.0, 2.86, -2.8, 1.05);
   }
 
+  // ---------------- motorbike ----------------
+  _buildBike() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const fz = this.fz, rz = this.rz;
+    const suit = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.7 });
+    const helmet = new THREE.MeshPhysicalMaterial({ color: 0x0d0d0f, roughness: 0.2, clearcoat: 1 });
+    // fuel tank, fairing, tail
+    add(loft([[-0.12, 0.13, 0.98, 0.72], [0.15, 0.17, 1.06, 0.7], [0.42, 0.15, 1.02, 0.72], [0.55, 0.11, 0.92, 0.76]], -0.12, 0.55, 0.04, 2.6), P);
+    add(loft([[0.48, 0.2, 1.08, 0.58], [0.75, 0.22, 1.05, 0.55], [0.98, 0.15, 0.92, 0.6], [1.06, 0.08, 0.8, 0.68]], 0.48, 1.06, 0.04, 2.4), P);
+    add(loft([[-0.98, 0.04, 0.98, 0.9], [-0.85, 0.1, 1.0, 0.84], [-0.5, 0.13, 0.96, 0.76], [-0.3, 0.13, 0.92, 0.74]], -0.98, -0.3, 0.04, 2.4), P);
+    // windscreen
+    const ws = new THREE.BoxGeometry(0.3, 0.26, 0.02); ws.rotateX(-0.75);
+    add(ws, M.glass, 0, 1.08, 0.82, false);
+    // seat
+    add(loft([[-0.62, 0.11, 0.96, 0.86], [-0.4, 0.14, 0.95, 0.85], [-0.12, 0.14, 0.94, 0.84]], -0.62, -0.12, 0.04, 3), M.black);
+    // engine block, frame and swingarm
+    this._box(0.3, 0.32, 0.46, M.black, 0, 0.5, 0.12);
+    this._box(0.32, 0.12, 0.3, M.alu, 0, 0.66, 0.2);
+    for (let k = 0; k < 4; k++) this._box(0.34, 0.015, 0.24, M.alu, 0, 0.44 + k * 0.05, 0.12, false);
+    for (const s of [-1, 1]) {
+      const fr = this._box(0.04, 0.05, 0.9, M.alu, s * 0.12, 0.74, 0.2); fr.rotation.x = 0.25;
+      const sw = this._box(0.04, 0.06, 0.62, M.alu, s * 0.1, WR + 0.06, rz + 0.33); sw.rotation.x = -0.1;
+    }
+    // exhaust
+    const ex = new THREE.CylinderGeometry(0.06, 0.05, 0.6, 14); ex.rotateX(Math.PI / 2 - 0.2);
+    add(ex, M.chrome, -0.16, 0.55, -0.55);
+    const exT = new THREE.CylinderGeometry(0.045, 0.045, 0.02, 12); exT.rotateX(Math.PI / 2 - 0.2);
+    add(exT, M.black, -0.16, 0.6, -0.86, false);
+    // lights
+    this._box(0.16, 0.07, 0.04, this.headMat, 0, 0.9, 1.06, false);
+    for (const s of [-1, 1]) this._box(0.05, 0.03, 0.03, this.headMat, s * 0.1, 0.83, 1.03, false);
+    this._box(0.16, 0.04, 0.03, this.tailMat, 0, 0.95, -0.99, false);
+    this._box(0.12, 0.06, 0.01, new THREE.MeshStandardMaterial({ color: 0xf0f0f0 }), 0, 0.78, -0.98, false);
+
+    // rider
+    const torso = new THREE.CapsuleGeometry(0.17, 0.42, 4, 10); torso.rotateX(0.95);
+    add(torso, suit, 0, 1.22, -0.18);
+    const hb = new THREE.SphereGeometry(0.15, 18, 14);
+    add(hb, helmet, 0, 1.52, 0.17);
+    const visor = new THREE.SphereGeometry(0.152, 18, 10, -Math.PI * 0.45, Math.PI * 0.9, Math.PI * 0.35, Math.PI * 0.3);
+    add(visor, M.glass, 0, 1.52, 0.17, false);
+    this._box(0.04, 0.03, 0.24, P, 0, 1.62, 0.12, false); // helmet stripe
+    for (const s of [-1, 1]) {
+      const arm = new THREE.CapsuleGeometry(0.05, 0.46, 4, 8); arm.rotateX(-0.86);
+      add(arm, suit, s * 0.21, 1.2, 0.24);
+      const thigh = new THREE.CapsuleGeometry(0.075, 0.36, 4, 8); thigh.rotateX(1.35);
+      add(thigh, suit, s * 0.2, 0.98, -0.18);
+      const shin = new THREE.CapsuleGeometry(0.06, 0.34, 4, 8); shin.rotateX(-0.5);
+      add(shin, suit, s * 0.22, 0.72, -0.02);
+      this._box(0.08, 0.06, 0.2, M.black, s * 0.22, 0.52, 0.02); // boots
+    }
+
+    // wheels: thin tyres, spoked rims, brake discs; the fork + bars steer with the front wheel
+    const tyre = new THREE.TorusGeometry(WR - 0.07, 0.075, 12, 32); tyre.rotateY(Math.PI / 2);
+    const rim = new THREE.TorusGeometry(WR - 0.13, 0.018, 6, 28); rim.rotateY(Math.PI / 2);
+    const spoke = new THREE.BoxGeometry(0.02, WR - 0.13, 0.025); spoke.translate(0, (WR - 0.13) / 2, 0);
+    const disc = new THREE.CylinderGeometry(0.15, 0.15, 0.012, 24); disc.rotateZ(Math.PI / 2);
+    for (const [z, front] of [[fz, true], [rz, false]]) {
+      const pivot = new THREE.Group(); pivot.position.set(0, WR, z);
+      const spin = new THREE.Group(); pivot.add(spin);
+      const t = new THREE.Mesh(tyre, M.tire); t.castShadow = true; spin.add(t);
+      spin.add(new THREE.Mesh(rim, M.chrome));
+      for (let k = 0; k < 6; k++) { const sp = new THREE.Mesh(spoke, M.rim); sp.rotation.x = (k / 6) * Math.PI * 2; spin.add(sp); }
+      const d = new THREE.Mesh(disc, M.alu); d.position.x = 0.07; spin.add(d);
+      if (front) {
+        for (const s of [-1, 1]) {
+          const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.72, 8), M.alu);
+          fork.position.set(s * 0.1, 0.33, -0.12); fork.rotation.x = -0.4; fork.castShadow = true; pivot.add(fork);
+        }
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.62, 8), M.black);
+        bar.rotation.z = Math.PI / 2; bar.position.set(0, 0.7, -0.3); pivot.add(bar);
+        const fender = new THREE.Mesh(new THREE.TorusGeometry(WR + 0.02, 0.03, 4, 16, Math.PI * 0.6), P);
+        fender.rotation.y = Math.PI / 2; fender.rotation.x = Math.PI * 0.2; pivot.add(fender);
+      }
+      this.body.add(pivot); // inside the body so the wheels lean with it
+      this.wheels.push({ pivot, spin, front });
+    }
+    this._lights(0.03, 0.9, 1.08, -0.98, 0.95);
+  }
+
   setColor(hex) { this.paint.color.setHex(hex); }
 
   placeOnRoad(i, lat = LANE) {
@@ -437,7 +520,7 @@ export class Car {
     const hRR = w.groundAt(this.pos.x - nfx * hl + nrx * hw, this.pos.z - nfz * hl + nrz * hw);
     const ty = (hFL + hFR + hRL + hRR) / 4;
     const tPitch = Math.atan2((hFL + hFR) / 2 - (hRL + hRR) / 2, WB);
-    const tRoll = Math.atan2((hFL + hRL) / 2 - (hFR + hRR) / 2, TRACK);
+    const tRoll = this.model === 'bike' ? 0 : Math.atan2((hFL + hRL) / 2 - (hFR + hRR) / 2, TRACK);
     // gravity: on the ground vy tracks the slope; if the ground falls away faster than
     // a ballistic arc (crests, cliffs) the car takes off and drops under gravity
     const G = 14;
@@ -474,7 +557,13 @@ export class Car {
 
   _finishPose(dt, a, latAcc) {
     const night = this._night, throttle = this.throttleIn;
-    const bodyRoll = clamp(-latAcc * 0.006, -0.06, 0.06);
+    let bodyRoll = clamp(-latAcc * 0.006, -0.06, 0.06);
+    if (this.model === 'bike') {
+      // motorbikes lean into the turn
+      const target = clamp(Math.atan(latAcc / 9.81), -0.8, 0.8);
+      this.lean = lerp(this.lean || 0, target, 1 - Math.exp(-6 * dt));
+      bodyRoll = this.lean;
+    }
     const bodyPitch = clamp(-a * 0.004, -0.04, 0.04);
 
     this.group.position.set(this.pos.x, this.y, this.pos.z);
