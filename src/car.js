@@ -241,15 +241,16 @@ export class Car {
     const limit = this.autoSpeed;               // the speed setting (m/s) caps manual driving too
     const maxV = limit; // no off-road penalty: drive anywhere, even up mountains
     const boost = Math.max(0, limit - 50) * 0.32; // so very high limits are reached in a few seconds
+    const revMax = Math.max(20, limit * 0.75);  // reverse top speed: 75% of the speed setting (at least 72 km/h)
     let a = 0;
     if (throttle > 0) {
-      if (this.speed < -0.5) a += 10 * throttle;
+      if (this.speed < -0.5) a += throttle * (14 + boost * 1.2); // stop reversing quickly
       else a += throttle * (7.2 + boost) * clamp(1 - this.speed / maxV, 0, 1) + 0.6 * throttle * (this.speed < maxV ? 1 : 0);
     }
     if (this.speed > maxV + 1) a -= (this.speed - maxV) * 1.5;
     if (brake > 0) {
       if (this.speed > 0.3) a -= brake * (13 + boost * 1.2);
-      else if (!auto) a -= brake * 4; // reverse
+      else if (!auto) a -= brake * (9 + boost * 0.8) * clamp(3 * (1 + this.speed / revMax), 0, 1); // reverse: quick, up to revMax
       else this.speed *= 0.9;
     }
     a -= 0.0011 * this.speed * Math.abs(this.speed) * Math.min(1, (58 / Math.max(limit, 1)) ** 2);
@@ -257,7 +258,7 @@ export class Car {
     if (this.airborne) a *= 0.6;
     const prev = this.speed;
     this.speed += a * dt;
-    if (!auto && this.speed < -9) this.speed = -9;
+    if (!auto && this.speed < -revMax) this.speed = -revMax;
     if (Math.sign(prev) !== Math.sign(this.speed) && throttle === 0 && brake === 0) this.speed = 0;
     if (Math.abs(this.speed) < 0.05 && throttle === 0 && brake === 0) this.speed = 0;
     this.braking = brake > 0.05 && this.speed > 0.5;
