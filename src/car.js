@@ -9,13 +9,14 @@ let WR = 0.35;        // wheel radius
 const RAIL = 55;      // m/s (~200 km/h): above this the car locks to the road
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'plane'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
+  plane: { wb: 1.9, track: 2.2, wr: 0.26, tyreW: 0.14, camDist: 17, camH: 4.5, hood: [0, 2.12, 0.15] },
   bike: { wb: 1.45, track: 0.2, wr: 0.31, tyreW: 0.16, camDist: 5.4, camH: 1.8, hood: [0, 1.42, -0.05] },
 };
 
@@ -123,7 +124,9 @@ export class Car {
     if (name === 'sports') this._buildSports();
     else if (name === 'suv') this._buildSUV();
     else if (name === 'truck') this._buildTruck();
+    else if (name === 'plane') this._buildPlane();
     else this._buildBike();
+    this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0;
     this.lean = 0;
   }
 
@@ -398,6 +401,135 @@ export class Car {
     this._lights(0.03, 0.9, 1.08, -0.98, 0.95);
   }
 
+  // ---------------- aeroplane ----------------
+  _buildPlane() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.4, metalness: 0.1 });
+    // tapered, swept slab (wings, tailplane)
+    const slab = (span, thick, chord, taper, dihedral, sweep) => {
+      const g = new THREE.BoxGeometry(span, thick, chord, 12, 1, 1);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), a = Math.abs(x) / (span / 2);
+        p.setZ(i, p.getZ(i) * (1 - taper * a) - sweep * a);
+        p.setY(i, p.getY(i) * (1 - 0.5 * a) + dihedral * a);
+      }
+      g.computeVertexNormals();
+      return g;
+    };
+    add(loft([[-4.3, 0.06, 1.85, 1.68], [-3.2, 0.26, 1.85, 1.3], [-1.4, 0.52, 2.0, 1.0], [0.2, 0.6, 2.04, 0.92], [1.4, 0.56, 1.9, 0.96], [2.2, 0.44, 1.66, 1.06], [2.62, 0.26, 1.5, 1.16]], -4.3, 2.62, 0.05, 2.4), P);
+    add(loft([[-1.0, 0.3, 1.98, 1.72], [-0.3, 0.46, 2.38, 1.72], [0.6, 0.44, 2.3, 1.72], [1.15, 0.3, 1.96, 1.72]], -1.0, 1.15, 0.05, 2.1), M.glass);
+    add(slab(9.6, 0.16, 1.6, 0.45, 0.28, 0.25), P, 0, 1.08, 0.1);
+    add(slab(3.4, 0.08, 0.85, 0.4, 0, 0.15), P, 0, 1.75, -3.85);
+    // vertical fin
+    const fin = new THREE.BoxGeometry(0.08, 1.35, 1.1, 1, 6, 1);
+    { const p = fin.attributes.position; for (let i = 0; i < p.count; i++) { const t = (p.getY(i) + 0.675) / 1.35; p.setZ(i, p.getZ(i) * (1 - 0.45 * t) - 0.55 * t); } fin.computeVertexNormals(); }
+    add(fin, P, 0, 2.45, -3.7);
+    // white livery stripes
+    for (const sx of [-1, 1]) this._box(0.02, 0.1, 2.6, white, sx * 0.585, 1.5, 0.3, false);
+    add(slab(9.62, 0.02, 0.3, 0.45, 0.28, 0.25), white, 0, 1.17, -0.3, false);
+    // nose spinner + propeller
+    const spin = new THREE.ConeGeometry(0.22, 0.5, 16); spin.rotateX(Math.PI / 2);
+    add(spin, M.chrome, 0, 1.36, 2.85);
+    this.prop = new THREE.Group(); this.prop.position.set(0, 1.36, 2.82); this.body.add(this.prop);
+    for (let k = 0; k < 3; k++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.95, 0.03), M.black);
+      b.geometry.translate(0, 0.48, 0); b.rotation.z = (k / 3) * Math.PI * 2; b.rotation.y = 0.25; this.prop.add(b);
+    }
+    // wingtip navigation lights (red left / green right) + tail strobe
+    const red = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff2020, emissiveIntensity: 2 });
+    const green = new THREE.MeshStandardMaterial({ color: 0x003000, emissive: 0x20ff40, emissiveIntensity: 2 });
+    this._box(0.1, 0.08, 0.16, red, 4.8, 1.36, -0.12, false);
+    this._box(0.1, 0.08, 0.16, green, -4.8, 1.36, -0.12, false);
+    this._box(0.06, 0.06, 0.1, this.tailMat, 0, 3.12, -4.28, false);
+    this._box(0.3, 0.08, 0.05, this.headMat, 0, 1.12, 2.5, false);
+    // landing gear: fixed struts + wheel fairings
+    const gear = [[1.15, 0.1, false], [-1.15, 0.1, false], [0, 2.0, true]];
+    const tg = new THREE.CylinderGeometry(WR, WR, 0.14, 20); tg.rotateZ(Math.PI / 2);
+    for (const [x, z, front] of gear) {
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.95, 8), M.alu);
+      strut.position.set(x * 0.85, 0.75, z); strut.rotation.z = x * 0.2; strut.castShadow = true; this.body.add(strut);
+      const pivot = new THREE.Group(); pivot.position.set(x, WR, z);
+      const spinG = new THREE.Group(); pivot.add(spinG);
+      const t = new THREE.Mesh(tg, M.tire); t.castShadow = true; spinG.add(t);
+      const fair = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), P); fair.scale.set(0.45, 0.6, 1.2); fair.position.y = 0.06; pivot.add(fair);
+      this.body.add(pivot);
+      this.wheels.push({ pivot, spin: spinG, front });
+    }
+    this._lights(0.15, 1.12, 2.55, -4.3, 3.1);
+  }
+
+  // arcade flight model: speed is held at the speed setting (min take-off speed),
+  // W/S pitch, A/D bank (banking turns the plane), Space slows down.
+  _updatePlane(dt, input, auto, loc) {
+    const w = this.world;
+    const target = Math.max(this.autoSpeed, 45);
+    let pitchIn = 0, rollIn = 0, slow = input.space ? 1 : 0;
+    const ground = w.groundAt(this.pos.x, this.pos.z);
+    const agl = this.y - ground;
+    if (auto) {
+      // autopilot: follow the road from the air, staying well above the terrain ahead
+      const sp = Math.max(this.speed, 20);
+      const tgt = w.sample(loc.i + loc.t + (220 + sp * 2.5) / STEP, this.tmp);
+      const want = Math.atan2(tgt.x - this.pos.x, tgt.z - this.pos.z);
+      let err = want - this.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
+      rollIn = clamp(-err * 2.2, -1, 1);
+      const [fx, fz] = this.dir;
+      let hi = ground;
+      for (const d of [80, 200, 400, 700]) hi = Math.max(hi, w.groundAt(this.pos.x + fx * d * Math.max(1, sp / 60), this.pos.z + fz * d * Math.max(1, sp / 60)));
+      const altT = hi + 90;
+      const pT = this.speed < 32 ? 0 : clamp(Math.atan2(altT - this.y, 250), -0.3, 0.4);
+      pitchIn = clamp((pT - this.flightPitch) * 3, -1, 1);
+    } else {
+      pitchIn = (input.throttle ? 1 : 0) - (input.brake && !input.space ? 1 : 0);
+      rollIn = input.steer;
+    }
+    if (this.flightPitch === undefined) this.flightPitch = 0;
+
+    // speed: auto-throttle to the target, Space = air brake
+    const boost = Math.max(0, target - 50) * 0.3;
+    const err = target * (slow ? 0.35 : 1) - this.speed;
+    this.speed += clamp(err, -(14 + boost), 9 + boost) * dt * (err > 0 ? 0.6 : 1);
+    this.speed -= Math.sin(this.flightPitch) * 9.81 * 0.3 * dt; // climbing costs a little speed
+    this.speed = Math.max(this.speed, 0);
+    this.throttleIn = err > 0 ? 1 : 0.2;
+    this.braking = slow > 0;
+
+    const lift = clamp((this.speed - 24) / 14, 0, 1);
+    const onGround = agl <= 0.05;
+    // pitch & bank
+    if (onGround && lift < 1) pitchIn = Math.min(pitchIn, 0) + (lift >= 1 ? pitchIn : 0);
+    this.flightPitch = clamp(this.flightPitch + pitchIn * 0.9 * dt, -1.2, 1.2);
+    if (!pitchIn && !onGround) this.flightPitch *= Math.exp(-0.25 * dt);
+    if (onGround && this.flightPitch < 0) this.flightPitch = 0;
+    const rollT = onGround ? 0 : rollIn * 0.95;
+    this.roll = lerp(this.roll, rollT, 1 - Math.exp(-3 * dt));
+    // banked turn (on the ground: nose-wheel steering)
+    const yawRate = onGround ? clamp(rollIn * 0.6 * Math.min(1, this.speed / 8), -0.6, 0.6) : -Math.tan(this.roll) * 0.75;
+    this.yaw += onGround ? -yawRate * dt : yawRate * dt;
+
+    // move
+    const cp = Math.cos(this.flightPitch);
+    const [fx, fz] = this.dir;
+    this.pos.x += fx * cp * this.speed * dt;
+    this.pos.z += fz * cp * this.speed * dt;
+    const climb = Math.sin(this.flightPitch) * this.speed * lift - (1 - lift) * (onGround ? 0 : 9);
+    this.y += climb * dt;
+    this.dist += this.speed * dt;
+    const g2 = w.groundAt(this.pos.x, this.pos.z);
+    if (this.y <= g2) {
+      if (!onGround && climb < -12 && this.onLand) this.onLand(-climb, 1.5);
+      this.y = g2;
+      if (this.flightPitch < 0) this.flightPitch = 0;
+    }
+    this.airborne = this.y > g2 + 0.3;
+    this.altitude = this.y - g2;
+    this.pitch = this.flightPitch;
+    this.steer = onGround ? rollIn * 0.4 : 0;
+    if (this.prop) this.prop.rotation.z += (20 + this.speed * 0.8) * dt;
+    this._finishPose(dt, 0, 0);
+  }
+
   setColor(hex) { this.paint.color.setHex(hex); }
 
   placeOnRoad(i, lat = LANE) {
@@ -424,6 +556,7 @@ export class Car {
     const dxp = this.pos.x - s0.x, dzp = this.pos.z - s0.z;
     this.lat = dxp * -s0.fz + dzp * s0.fx;
     this.onRoad = Math.abs(this.lat) < ROAD_HALF + SHOULDER + 0.3;
+    if (this.model === 'plane') { this._updatePlane(dt, input, auto, loc); return; }
 
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {

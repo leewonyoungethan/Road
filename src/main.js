@@ -111,7 +111,7 @@ setupComposer();
 
 // ---------------- input ----------------
 const keys = new Set();
-const input = { throttle: 0, brake: 0, steer: 0 };
+const input = { throttle: 0, brake: 0, steer: 0, space: 0 };
 let autoDrive = true;
 let camMode = 0; // 0 chase, 1 hood, 2 cinematic, 3 top
 const CAM_NAMES = ['추격', '보닛', '시네마틱', '항공'];
@@ -147,7 +147,7 @@ addEventListener('keydown', (e) => {
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   // any manual drive key takes over from autopilot
-  if (autoDrive && ['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code)) { toggleAuto(); }
+  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (car.model === 'plane' && ['KeyS', 'ArrowDown'].includes(e.code)))) { toggleAuto(); }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -175,6 +175,7 @@ function readInput() {
   const k = (c) => keys.has(c);
   input.throttle = (k('KeyW') || k('ArrowUp') || touch.gas) ? 1 : 0;
   input.brake = (k('KeyS') || k('ArrowDown') || k('Space') || touch.brake) ? 1 : 0;
+  input.space = k('Space') ? 1 : 0;
   input.steer = ((k('KeyD') || k('ArrowRight') || touch.right) ? 1 : 0) - ((k('KeyA') || k('ArrowLeft') || touch.left) ? 1 : 0);
 }
 
@@ -183,7 +184,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   speed: $('speed'), gear: $('gear'), dist: $('dist'), clock: $('clock'), mode: $('mode'),
   auto: $('btn-auto'), cam: $('btn-cam'), time: $('btn-time'), sound: $('btn-sound'), qual: $('btn-quality'),
-  clouds: $('btn-clouds'), slider: $('speed-slider'), speedSet: $('speed-set'), color: $('btn-color'), model: $('btn-model'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
+  clouds: $('btn-clouds'), slider: $('speed-slider'), speedSet: $('speed-set'), color: $('btn-color'), model: $('btn-model'), gearLbl: $('gear-lbl'), seed: $('seed'), toast: $('toast'), loading: $('loading'), bar: $('bar'),
 };
 function toast(msg) {
   ui.toast.textContent = msg; ui.toast.classList.add('show');
@@ -398,7 +399,8 @@ function frame() {
   // HUD
   const kmh = Math.abs(car.speed) * 3.6;
   ui.speed.textContent = Math.round(kmh);
-  ui.gear.textContent = car.speed < -0.3 ? 'R' : car.speed < 0.3 ? 'N' : car.gear;
+  if (car.model === 'plane') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
+  else { ui.gearLbl.textContent = '기어'; ui.gear.textContent = car.speed < -0.3 ? 'R' : car.speed < 0.3 ? 'N' : car.gear; }
   ui.dist.textContent = (car.dist / 1000).toFixed(1);
   const hh = Math.floor(atmo.time), mm = Math.floor((atmo.time - hh) * 60);
   ui.clock.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;

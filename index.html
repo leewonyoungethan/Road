@@ -127,11 +127,11 @@
     <div><button data-wtype="">랜덤</button><button data-wtype="plains">평원</button><button data-wtype="hills">구릉</button><button data-wtype="alpine">산악</button><button data-wtype="lakes">호수</button><button data-wtype="desert">사막</button><button data-wtype="mixed">혼합</button></div>
   </div>
   <div class="wtypes"><span>차종</span>
-    <div><button data-car="sports">스포츠카</button><button data-car="suv">SUV</button><button data-car="truck">트럭</button><button data-car="bike">오토바이</button></div>
+    <div><button data-car="sports">스포츠카</button><button data-car="suv">SUV</button><button data-car="truck">트럭</button><button data-car="bike">오토바이</button><button data-car="plane">비행기</button></div>
   </div>
   <button id="start">드라이브 시작</button>
   <div class="keys">
-    <b>W A S D / 방향키</b><span>수동 운전 (누르면 자동 주행 해제)</span>
+    <b>W A S D / 방향키</b><span>수동 운전 (누르면 자동 주행 해제) · 비행기: W/S 기수 올림·내림, A/D 선회, Space 감속</span>
     <b>E</b><span>자동 주행 켜기 / 끄기</span>
     <b>C</b><span>카메라 전환 · 마우스 드래그로 둘러보기</span>
     <b>T · L</b><span>시간대 변경 · 시간 흐름</span>
@@ -160,7 +160,7 @@
 <div class="hud" id="speedo">
   <div><span id="mode">AUTO</span></div>
   <div class="row"><span id="speed">0</span><span class="unit">km/h</span></div>
-  <div class="meta"><span>기어 <b id="gear">N</b></span><span><b id="dist">0.0</b> km</span><span><b id="clock">17:00</b></span></div>
+  <div class="meta"><span><span id="gear-lbl">기어</span> <b id="gear">N</b></span><span><b id="dist">0.0</b> km</span><span><b id="clock">17:00</b></span></div>
 </div>
 
 <div class="hud" id="speedctl">
