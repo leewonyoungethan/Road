@@ -101,6 +101,10 @@
     #touch [data-touch=left] { right: auto; left: calc(50% - 170px); }
     #touch [data-touch=right] { left: calc(50% - 86px); }
     #touch [data-touch=brake] { right: 112px; }
+    #touch .heli-only { display: none; }
+    body.heli #touch .heli-only { display: grid; }
+    #touch [data-touch=up] { right: 24px; bottom: 132px; width: 60px; height: 60px; }
+    #touch [data-touch=down] { right: 96px; bottom: 132px; width: 60px; height: 60px; }
     #touch [data-touch=gas] { right: 24px; width: 80px; height: 96px; border-radius: 28px; }
     #speedo { bottom: 120px; left: 20px; }
     #speed { font-size: 46px; }
@@ -127,11 +131,11 @@
     <div><button data-wtype="">랜덤</button><button data-wtype="plains">평원</button><button data-wtype="hills">구릉</button><button data-wtype="alpine">산악</button><button data-wtype="lakes">호수</button><button data-wtype="desert">사막</button><button data-wtype="mixed">혼합</button></div>
   </div>
   <div class="wtypes"><span>차종</span>
-    <div><button data-car="sports">스포츠카</button><button data-car="suv">SUV</button><button data-car="truck">트럭</button><button data-car="bike">오토바이</button><button data-car="plane">비행기</button></div>
+    <div><button data-car="sports">스포츠카</button><button data-car="suv">SUV</button><button data-car="truck">트럭</button><button data-car="bike">오토바이</button><button data-car="plane">비행기</button><button data-car="heli">헬리콥터</button></div>
   </div>
   <button id="start">드라이브 시작</button>
   <div class="keys">
-    <b>W A S D / 방향키</b><span>수동 운전 (누르면 자동 주행 해제) · 비행기: W/S 기수 올림·내림, A/D 선회, Space 감속</span>
+    <b>W A S D / 방향키</b><span>수동 운전 (누르면 자동 주행 해제) · 비행기: W/S 기수·A/D 선회·Space 감속 · 헬기: W/S 전후진·A/D 회전·Space 상승·Shift/Q 하강</span>
     <b>E</b><span>자동 주행 켜기 / 끄기</span>
     <b>C</b><span>카메라 전환 · 마우스 드래그로 둘러보기</span>
     <b>T · L</b><span>시간대 변경 · 시간 흐름</span>
@@ -174,6 +178,8 @@
   <div class="pad" data-touch="right">▶</div>
   <div class="pad" data-touch="brake">■</div>
   <div class="pad" data-touch="gas">▲</div>
+  <div class="pad heli-only" data-touch="up">⇧</div>
+  <div class="pad heli-only" data-touch="down">⇩</div>
 </div>
 
 <div id="toast"></div>

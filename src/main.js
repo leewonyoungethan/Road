@@ -111,7 +111,7 @@ setupComposer();
 
 // ---------------- input ----------------
 const keys = new Set();
-const input = { throttle: 0, brake: 0, steer: 0, space: 0 };
+const input = { throttle: 0, brake: 0, steer: 0, space: 0, back: 0, up: 0, down: 0 };
 let autoDrive = true;
 let camMode = 0; // 0 chase, 1 hood, 2 cinematic, 3 top
 const CAM_NAMES = ['추격', '보닛', '시네마틱', '항공'];
@@ -147,7 +147,7 @@ addEventListener('keydown', (e) => {
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   // any manual drive key takes over from autopilot
-  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (car.model === 'plane' && ['KeyS', 'ArrowDown'].includes(e.code)))) { toggleAuto(); }
+  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (car.model === 'plane' && ['KeyS', 'ArrowDown'].includes(e.code)) || (car.model === 'heli' && ['KeyS', 'ArrowDown', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ'].includes(e.code)))) { toggleAuto(); }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -163,7 +163,7 @@ addEventListener('pointermove', (e) => {
 });
 
 // touch controls
-const touch = { left: false, right: false, gas: false, brake: false };
+const touch = { left: false, right: false, gas: false, brake: false, up: false, down: false };
 document.querySelectorAll('[data-touch]').forEach((el) => {
   const k = el.dataset.touch;
   const on = (e) => { e.preventDefault(); touch[k] = true; el.classList.add('on'); if (autoDrive && k !== 'brake') toggleAuto(); };
@@ -176,6 +176,9 @@ function readInput() {
   input.throttle = (k('KeyW') || k('ArrowUp') || touch.gas) ? 1 : 0;
   input.brake = (k('KeyS') || k('ArrowDown') || k('Space') || touch.brake) ? 1 : 0;
   input.space = k('Space') ? 1 : 0;
+  input.back = (k('KeyS') || k('ArrowDown') || touch.brake) ? 1 : 0;
+  input.up = (k('Space') || touch.up) ? 1 : 0;
+  input.down = (k('ShiftLeft') || k('ShiftRight') || k('KeyQ') || touch.down) ? 1 : 0;
   input.steer = ((k('KeyD') || k('ArrowRight') || touch.right) ? 1 : 0) - ((k('KeyA') || k('ArrowLeft') || touch.left) ? 1 : 0);
 }
 
@@ -228,6 +231,7 @@ function refreshUI() {
   document.querySelectorAll('[data-car]').forEach((b) => b.classList.toggle('active', b.dataset.car === car.model));
   ui.clouds.querySelector('span').textContent = WEATHER_NAMES[WEATHERS[weatherIdx]];
   document.body.classList.toggle('manual', !autoDrive);
+  document.body.classList.toggle('heli', car.model === 'heli');
 }
 ui.auto.onclick = toggleAuto; ui.cam.onclick = cycleCam; ui.time.onclick = cycleTime; ui.sound.onclick = toggleMute;
 ui.clouds.onclick = cycleClouds; ui.color.onclick = cycleColor; ui.model.onclick = cycleModel;
@@ -399,7 +403,7 @@ function frame() {
   // HUD
   const kmh = Math.abs(car.speed) * 3.6;
   ui.speed.textContent = Math.round(kmh);
-  if (car.model === 'plane') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
+  if (car.model === 'plane' || car.model === 'heli') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
   else { ui.gearLbl.textContent = '기어'; ui.gear.textContent = car.speed < -0.3 ? 'R' : car.speed < 0.3 ? 'N' : car.gear; }
   ui.dist.textContent = (car.dist / 1000).toFixed(1);
   const hh = Math.floor(atmo.time), mm = Math.floor((atmo.time - hh) * 60);

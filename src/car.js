@@ -9,13 +9,14 @@ let WR = 0.35;        // wheel radius
 const RAIL = 55;      // m/s (~200 km/h): above this the car locks to the road
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'plane'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'plane', 'heli'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', heli: '헬리콥터' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
+  heli: { wb: 2.0, track: 2.0, wr: 0.3, tyreW: 0.1, camDist: 15, camH: 5, hood: [0, 1.95, 1.35] },
   plane: { wb: 1.9, track: 2.2, wr: 0.26, tyreW: 0.14, camDist: 17, camH: 4.5, hood: [0, 2.12, 0.15] },
   bike: { wb: 1.45, track: 0.2, wr: 0.31, tyreW: 0.16, camDist: 5.4, camH: 1.8, hood: [0, 1.42, -0.05] },
 };
@@ -125,8 +126,9 @@ export class Car {
     else if (name === 'suv') this._buildSUV();
     else if (name === 'truck') this._buildTruck();
     else if (name === 'plane') this._buildPlane();
+    else if (name === 'heli') this._buildHeli();
     else this._buildBike();
-    this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0;
+    this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0; this.aglTarget = 0; this.vy = 0; this.rotorRate = 0; this.heliV = 0;
     this.lean = 0;
   }
 
@@ -530,6 +532,129 @@ export class Car {
     this._finishPose(dt, 0, 0);
   }
 
+  // ---------------- helicopter ----------------
+  _buildHeli() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.4, metalness: 0.1 });
+    // cabin + tail boom
+    add(loft([[-1.3, 0.5, 2.05, 0.75], [-0.6, 0.78, 2.35, 0.62], [0.4, 0.8, 2.4, 0.6], [0.6, 0.78, 2.36, 0.62]], -1.3, 0.6, 0.05, 2.4), P);
+    add(loft([[0.4, 0.8, 1.32, 0.6], [1.3, 0.75, 1.27, 0.66], [1.9, 0.56, 1.17, 0.8], [2.18, 0.3, 1.07, 0.95]], 0.4, 2.18, 0.05, 2.4), P);
+    add(loft([[0.5, 0.77, 2.34, 1.0], [1.2, 0.74, 2.2, 1.0], [1.85, 0.56, 1.82, 1.0], [2.16, 0.3, 1.38, 1.0]], 0.5, 2.16, 0.04, 2.2), M.glass);
+    add(loft([[-5.6, 0.1, 2.05, 1.85], [-3.0, 0.16, 2.05, 1.72], [-1.2, 0.34, 2.15, 1.45]], -5.6, -1.2, 0.08, 2.4), P);
+    // engine cowling + mast
+    add(loft([[-1.2, 0.3, 2.55, 2.1], [-0.4, 0.42, 2.7, 2.1], [0.4, 0.36, 2.62, 2.1], [0.8, 0.2, 2.4, 2.1]], -1.2, 0.8, 0.05, 3), P);
+    this._box(0.1, 0.35, 0.1, M.alu, 0, 2.85, -0.1);
+    // tail fin & stabiliser
+    const fin = new THREE.BoxGeometry(0.07, 1.2, 0.7, 1, 6, 1);
+    { const p = fin.attributes.position; for (let i = 0; i < p.count; i++) { const t = (p.getY(i) + 0.6) / 1.2; p.setZ(i, p.getZ(i) * (1 - 0.4 * t) - 0.45 * t); } fin.computeVertexNormals(); }
+    add(fin, P, 0, 2.5, -5.35);
+    this._box(1.4, 0.05, 0.4, P, 0, 2.0, -4.6);
+    // white stripe
+    for (const sx of [-1, 1]) this._box(0.02, 0.1, 1.4, white, sx * 0.8, 1.5, -0.4, false);
+    // skids
+    for (const sx of [-1, 1]) {
+      const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4, 10), M.alu);
+      sk.rotation.x = Math.PI / 2; sk.position.set(sx * 0.95, 0.06, 0.2); sk.castShadow = true; this.body.add(sk);
+      for (const z of [-0.6, 1.0]) {
+        const st = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.85, 8), M.alu);
+        st.position.set(sx * 0.82, 0.45, z); st.rotation.z = sx * 0.35; st.castShadow = true; this.body.add(st);
+      }
+    }
+    // main rotor (4 blades) + tail rotor
+    this.rotor = new THREE.Group(); this.rotor.position.set(0, 3.05, -0.1); this.body.add(this.rotor);
+    this.rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.12, 12), M.black));
+    for (let k = 0; k < 4; k++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.04, 0.26), M.black);
+      b.geometry.translate(2.55, 0, 0); b.rotation.y = (k / 4) * Math.PI * 2; b.castShadow = true; this.rotor.add(b);
+    }
+    // faint blur disc so the spinning rotor reads at speed
+    this.rotorDisc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 40), new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    this.rotorDisc.rotation.x = -Math.PI / 2; this.rotor.add(this.rotorDisc);
+    this.tailRotor = new THREE.Group(); this.tailRotor.position.set(0.14, 2.3, -5.45); this.body.add(this.tailRotor);
+    for (let k = 0; k < 2; k++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.3, 0.12), M.black); b.rotation.x = k * Math.PI / 2; this.tailRotor.add(b);
+    }
+    // lights: nav, red beacons, landing light
+    const red = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff2020, emissiveIntensity: 2 });
+    const green = new THREE.MeshStandardMaterial({ color: 0x003000, emissive: 0x20ff40, emissiveIntensity: 2 });
+    this._box(0.06, 0.06, 0.1, red, 0.7, 2.0, -4.6, false);
+    this._box(0.06, 0.06, 0.1, green, -0.7, 2.0, -4.6, false);
+    this.beacon = this._box(0.12, 0.08, 0.12, red, 0, 2.66, 0.3, false);
+    this._box(0.22, 0.08, 0.05, this.headMat, 0, 0.72, 1.6, false);
+    this._box(0.06, 0.06, 0.06, this.tailMat, 0, 2.05, -5.62, false);
+    this._lights(0.1, 0.75, 1.7, -5.6, 2.0);
+  }
+
+  // hover physics: altitude is held above the ground; W/S fly forward/back,
+  // A/D turn, Space climbs, Shift/Q descends (land by descending to the ground)
+  _updateHeli(dt, input, auto, loc) {
+    const w = this.world;
+    const maxV = Math.max(this.autoSpeed, 8);
+    let fwdIn = 0, turnIn = 0;
+    if (this.heliV === undefined) this.heliV = 0;
+    if (auto) {
+      const sp = Math.max(this.heliV, 10);
+      const tgt = w.sample(loc.i + loc.t + (90 + sp * 2.2) / STEP, this.tmp);
+      const want = Math.atan2(tgt.x - this.pos.x, tgt.z - this.pos.z);
+      let err = want - this.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
+      turnIn = clamp(-err * 2.5, -1, 1);
+      this.aglTarget = lerp(this.aglTarget, 55, 1 - Math.exp(-0.5 * dt));
+      fwdIn = this.altitude > 12 ? 1 : 0;
+    } else {
+      fwdIn = (input.throttle ? 1 : 0) - (input.back ? 0.4 : 0);
+      turnIn = input.steer;
+      if (input.up) this.aglTarget += 14 * dt;
+      if (input.down) this.aglTarget -= 14 * dt;
+      if (fwdIn !== 0 && this.aglTarget < 6) this.aglTarget = 6; // lift off when you start flying
+    }
+    this.aglTarget = clamp(this.aglTarget, 0, 400);
+
+    // rotor spin-up
+    this.rotorRate = lerp(this.rotorRate, 1, 1 - Math.exp(-0.8 * dt));
+
+    // forward speed
+    const vT = fwdIn * maxV;
+    const accel = 5 + maxV * 0.25;
+    const dv = clamp(vT - this.heliV, -accel * dt, accel * dt);
+    this.heliV += dv;
+    this.speed = this.heliV;
+    this.throttleIn = Math.abs(fwdIn);
+    this.braking = false;
+
+    // turning (slower when fast)
+    this.yaw -= turnIn * (1.3 / (1 + Math.abs(this.heliV) * 0.01)) * dt;
+    const [fx, fz] = this.dir;
+    this.pos.x += fx * this.heliV * dt;
+    this.pos.z += fz * this.heliV * dt;
+    this.dist += Math.abs(this.heliV) * dt;
+
+    // altitude hold over the terrain (look ahead so it climbs before mountains)
+    const g0 = w.groundAt(this.pos.x, this.pos.z);
+    let gRef = g0;
+    if (this.aglTarget > 1) for (const d of [30, 80, 160]) gRef = Math.max(gRef, w.groundAt(this.pos.x + fx * d * Math.max(1, Math.abs(this.heliV) / 25), this.pos.z + fz * d * Math.max(1, Math.abs(this.heliV) / 25)) - 10);
+    const yT = this.aglTarget > 0.3 ? gRef + this.aglTarget : g0;
+    const lift = this.rotorRate;
+    const ay = clamp((yT - this.y) * 2.2 - this.vy * 2.4, -12, 14) * lift - (1 - lift) * 4;
+    this.vy += ay * dt;
+    this.y += this.vy * dt;
+    if (this.y <= g0) { if (this.vy < -10 && this.onLand) this.onLand(-this.vy, 1.5); this.y = g0; this.vy = Math.max(0, this.vy); }
+    this.altitude = this.y - g0;
+    this.airborne = this.altitude > 0.3;
+
+    // body attitude: nose down when accelerating/flying forward, bank into turns
+    const fwdTilt = clamp(this.heliV / Math.max(maxV, 1), -0.5, 1) * 0.22 + clamp(dv / dt / 20, -0.15, 0.15);
+    this.pitch = lerp(this.pitch, this.airborne ? -fwdTilt : 0, 1 - Math.exp(-3 * dt));
+    this.roll = lerp(this.roll, this.airborne ? turnIn * 0.22 * Math.min(1, Math.abs(this.heliV) / 15 + 0.3) : 0, 1 - Math.exp(-3 * dt));
+    this.steer = 0;
+    if (this.rotor) {
+      this.rotor.rotation.y += this.rotorRate * 28 * dt;
+      this.tailRotor.rotation.x += this.rotorRate * 60 * dt;
+      this.rotorDisc.material.opacity = this.rotorRate * 0.12;
+      this.beacon.visible = (performance.now() % 1200) < 150;
+    }
+    this._finishPose(dt, 0, 0);
+  }
+
   setColor(hex) { this.paint.color.setHex(hex); }
 
   placeOnRoad(i, lat = LANE) {
@@ -557,6 +682,7 @@ export class Car {
     this.lat = dxp * -s0.fz + dzp * s0.fx;
     this.onRoad = Math.abs(this.lat) < ROAD_HALF + SHOULDER + 0.3;
     if (this.model === 'plane') { this._updatePlane(dt, input, auto, loc); return; }
+    if (this.model === 'heli') { this._updateHeli(dt, input, auto, loc); return; }
 
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {
