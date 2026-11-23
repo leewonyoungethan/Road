@@ -147,7 +147,7 @@ addEventListener('keydown', (e) => {
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   // any manual drive key takes over from autopilot
-  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (car.model === 'plane' && ['KeyS', 'ArrowDown'].includes(e.code)) || (car.model === 'heli' && ['KeyS', 'ArrowDown', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ'].includes(e.code)))) { toggleAuto(); }
+  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || ((car.model === 'plane' || car.model === 'jet') && ['KeyS', 'ArrowDown'].includes(e.code)) || (car.model === 'heli' && ['KeyS', 'ArrowDown', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ'].includes(e.code)))) { toggleAuto(); }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -403,7 +403,7 @@ function frame() {
   // HUD
   const kmh = Math.abs(car.speed) * 3.6;
   ui.speed.textContent = Math.round(kmh);
-  if (car.model === 'plane' || car.model === 'heli') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
+  if (car.model === 'plane' || car.model === 'jet' || car.model === 'heli') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
   else { ui.gearLbl.textContent = '기어'; ui.gear.textContent = car.speed < -0.3 ? 'R' : car.speed < 0.3 ? 'N' : car.gear; }
   ui.dist.textContent = (car.dist / 1000).toFixed(1);
   const hh = Math.floor(atmo.time), mm = Math.floor((atmo.time - hh) * 60);
