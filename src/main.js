@@ -205,11 +205,17 @@ function cycleColor() { colorIdx = (colorIdx + 1) % CAR_COLORS.length; car.setCo
 function setModel(m) {
   car.setModel(m);
   car.y += 0.6; car.vy = 0; // drop in gently so bigger wheels don't clip the ground
-  refreshUI(); toast(`차종: ${CAR_MODEL_NAMES[m]}`);
+  refreshUI();
+  if (m === 'boat') {
+    toast(car.toWater() ? '배: 가까운 호수로 이동했어요' : '배: 근처에 호수가 없어 육지에서 천천히 달려요 (호수를 찾으면 R)');
+  } else toast(`차종: ${CAR_MODEL_NAMES[m]}`);
 }
 function cycleModel() { setModel(CAR_MODELS[(CAR_MODELS.indexOf(car.model) + 1) % CAR_MODELS.length]); }
 function toggleMute() { const m = audio.cycle(); refreshUI(); toast(`소리: ${SOUND_NAMES[m]}`); }
-function resetCar() { car.placeOnRoad(car.idx + 2); toast('도로로 복귀'); }
+function resetCar() {
+  if (car.model === 'boat') { toast(car.toWater() ? '가까운 호수로 이동' : '근처에 호수가 없어요'); return; }
+  car.placeOnRoad(car.idx + 2); toast('도로로 복귀');
+}
 function setQuality(k) {
   try { localStorage.setItem('wr-quality', k); } catch {}
   location.hash = `seed=${seed}` + (forcedType ? `&type=${forcedType}` : '');
@@ -328,6 +334,7 @@ function updateCamera(dt) {
 const START_IDX = 160;
 world.ensureRoad(START_IDX * STEP + quality.view * CHUNK + 400);
 car.placeOnRoad(START_IDX, LANE);
+if (car.model === 'boat') car.toWater();
 car.onLand = (impact, t) => { if (t > 1.2) toast(`${t.toFixed(1)}초 비행 — 착지!`); };
 let speedKmh = (() => { try { return parseFloat(localStorage.getItem('wr-speed')); } catch { return NaN; } })();
 if (!Number.isFinite(speedKmh)) speedKmh = 80;

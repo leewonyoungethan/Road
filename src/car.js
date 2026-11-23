@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clamp, lerp } from './noise.js';
-import { ROAD_HALF, SHOULDER, LANE, STEP } from './world.js';
+import { ROAD_HALF, SHOULDER, LANE, STEP, WATER_LEVEL } from './world.js';
 
 // per-model dimensions (set by setModel; used by the physics below)
 let WB = 2.62;        // wheelbase
@@ -15,14 +15,15 @@ const FLIGHT = {
 };
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'plane', 'jet', 'heli'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'boat', 'plane', 'jet', 'heli'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터', boat: '배' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
   heli: { wb: 2.0, track: 2.0, wr: 0.3, tyreW: 0.1, camDist: 15, camH: 5, hood: [0, 1.95, 1.35] },
+  boat: { wb: 3.0, track: 1.6, wr: 0.3, tyreW: 0.1, camDist: 11, camH: 3.4, hood: [0, 1.55, 0.2] },
   jet: { wb: 14, track: 7, wr: 0.6, tyreW: 0.4, camDist: 62, camH: 15, hood: [0, 5.3, 16.6] },
   plane: { wb: 1.9, track: 2.2, wr: 0.26, tyreW: 0.14, camDist: 17, camH: 4.5, hood: [0, 2.12, 0.15] },
   bike: { wb: 1.45, track: 0.2, wr: 0.31, tyreW: 0.16, camDist: 5.4, camH: 1.8, hood: [0, 1.42, -0.05] },
@@ -134,10 +135,12 @@ export class Car {
     else if (name === 'truck') this._buildTruck();
     else if (name === 'plane') this._buildPlane();
     else if (name === 'jet') this._buildJet();
+    else if (name === 'boat') this._buildBoat();
     else if (name === 'heli') this._buildHeli();
     else this._buildBike();
     this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0; this.aglTarget = 0; this.vy = 0; this.rotorRate = 0; this.heliV = 0;
     if (name !== 'jet') this.cabinMat = null;
+    if (this.wake) this.wake.visible = name === 'boat';
     this.lean = 0;
   }
 
@@ -542,6 +545,182 @@ export class Car {
     this._finishPose(dt, 0, 0);
   }
 
+  // ---------------- speedboat ----------------
+  _buildBoat() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.35, metalness: 0.05 });
+    const teak = new THREE.MeshStandardMaterial({ color: 0x9a6a3e, roughness: 0.6 });
+    const cream = new THREE.MeshStandardMaterial({ color: 0xe9e2d0, roughness: 0.7 });
+    // hull: coloured lower hull with a sharp bow, white topsides, teak deck
+    const hullKeys = [[-3.0, 1.1, 0.95, -0.22], [-2.0, 1.17, 0.97, -0.36], [0.0, 1.18, 1.0, -0.4], [1.4, 1.05, 1.03, -0.3],
+      [2.2, 0.78, 1.06, -0.08], [2.8, 0.42, 1.09, 0.3], [3.2, 0.06, 1.1, 0.78]];
+    add(loft(hullKeys, -3.0, 3.2, 0.06, 2.3), P);
+    // white sheer line just below the deck edge
+    add(loft([[-2.98, 1.1, 1.0, 0.86], [0.0, 1.18, 1.05, 0.9], [1.4, 1.05, 1.08, 0.93], [2.2, 0.78, 1.1, 0.96], [2.8, 0.42, 1.12, 1.0], [3.18, 0.06, 1.13, 1.04]], -2.98, 3.18, 0.06, 8), white);
+    add(loft([[-2.9, 1.02, 1.13, 1.04], [0.0, 1.1, 1.14, 1.05], [1.4, 0.97, 1.15, 1.06], [2.2, 0.7, 1.16, 1.07], [2.8, 0.36, 1.17, 1.08], [3.1, 0.06, 1.18, 1.1]], -2.9, 3.1, 0.08, 6), teak);
+    // cockpit: windscreen, console, seats
+    const ws = new THREE.BoxGeometry(1.8, 0.5, 0.04); ws.rotateX(-0.5);
+    add(ws, M.glass, 0, 1.4, 0.75, false);
+    this._box(1.82, 0.04, 0.05, M.chrome, 0, 1.62, 0.65, false);
+    this._box(0.6, 0.5, 0.5, white, 0.4, 1.3, 0.35);
+    this._box(0.12, 0.12, 0.04, M.black, 0.4, 1.55, 0.32, false); // wheel
+    for (const sx of [-0.45, 0.45]) {
+      this._box(0.55, 0.15, 0.55, cream, sx, 1.25, -0.4);
+      this._box(0.55, 0.5, 0.12, cream, sx, 1.45, -0.68);
+    }
+    this._box(2.0, 0.2, 0.7, cream, 0, 1.22, -2.1); // rear bench
+    // bow rail + navigation lights
+    this._box(0.06, 0.05, 0.25, M.chrome, 0, 1.2, 2.6, false); // bow cleat
+    const red = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff2020, emissiveIntensity: 2 });
+    const green = new THREE.MeshStandardMaterial({ color: 0x003000, emissive: 0x20ff40, emissiveIntensity: 2 });
+    this._box(0.06, 0.06, 0.1, red, 0.3, 1.22, 2.55, false);
+    this._box(0.06, 0.06, 0.1, green, -0.3, 1.22, 2.55, false);
+    this._box(0.04, 0.6, 0.04, M.chrome, 0, 1.7, -2.6);
+    this._box(0.08, 0.08, 0.08, this.headMat, 0, 2.02, -2.6, false);
+    this._box(0.5, 0.06, 0.04, this.tailMat, 0, 0.9, -3.02, false);
+    // outboard motor
+    this._box(0.5, 0.7, 0.6, M.black, 0, 1.0, -3.3);
+    this._box(0.52, 0.08, 0.62, P, 0, 1.2, -3.3, false);
+    this._box(0.14, 0.9, 0.2, M.black, 0, 0.25, -3.35);
+    this.motor = new THREE.Group(); this.motor.position.set(0, -0.15, -3.42); this.body.add(this.motor);
+    for (let k = 0; k < 3; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.22, 0.06), M.alu); b.geometry.translate(0, 0.11, 0); b.rotation.z = k * Math.PI * 2 / 3; this.motor.add(b); }
+    this._lights(0.3, 1.25, 2.6, -3.0, 1.0);
+  }
+
+  // nearest open water (deep enough for a boat) around x,z, or null
+  findWater(x, z, maxR = 3500) {
+    const w = this.world;
+    const deep = (px, pz) => w.baseHeight(px, pz) < WATER_LEVEL - 2.5;
+    for (let r = 0; r <= maxR; r += 40) {
+      const n = Math.max(1, Math.floor((2 * Math.PI * r) / 40));
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+        if (deep(px, pz) && deep(px + 25, pz) && deep(px - 25, pz) && deep(px, pz + 25) && deep(px, pz - 25)) return { x: px, z: pz };
+      }
+    }
+    return null;
+  }
+
+  toWater() {
+    const p = this.findWater(this.pos.x, this.pos.z);
+    if (!p) return false;
+    this.pos.x = p.x; this.pos.z = p.z; this.y = WATER_LEVEL; this.speed = 0; this.vy = 0;
+    return true;
+  }
+
+  _updateBoat(dt, input, auto, loc) {
+    const w = this.world;
+    const onWater = w.heightAt(this.pos.x, this.pos.z) < WATER_LEVEL - 0.25;
+    this.onWater = onWater;
+    const [fx, fz] = this.dir;
+    let throttle = 0, brake = 0, steerIn = 0;
+    if (auto) {
+      if (onWater) {
+        // cruise the lake: wander gently and steer away from the shore
+        const look = 25 + Math.abs(this.speed) * 2.2;
+        const land = (a) => w.heightAt(this.pos.x + Math.sin(this.yaw + a) * look, this.pos.z + Math.cos(this.yaw + a) * look) > WATER_LEVEL - 0.6;
+        const L = land(0.5), C = land(0), R = land(-0.5);
+        this.wander = (this.wander || 0) + (Math.random() - 0.5) * dt * 0.6;
+        this.wander = clamp(this.wander, -0.35, 0.35);
+        steerIn = this.wander;
+        if (C || L || R) steerIn = L && !R ? 1 : R && !L ? -1 : (this.turnPref || 1);
+        if (!C && !L && !R) this.turnPref = Math.random() < 0.5 ? -1 : 1;
+        const tgt = C ? Math.min(this.autoSpeed, 8) : this.autoSpeed;
+        const err = tgt - this.speed;
+        throttle = err > 0 ? clamp(err * 0.3, 0, 1) : 0; brake = err < -2 ? clamp(-err * 0.1, 0, 1) : 0;
+      } else {
+        // on land: follow the road like a car (amphibious mode)
+        const look = 7 + Math.abs(this.speed) * 0.85;
+        const tgt = w.sample(loc.i + loc.t + look / STEP, this.tmp);
+        const tx = tgt.x - tgt.fz * LANE - this.pos.x, tz = tgt.z + tgt.fx * LANE - this.pos.z;
+        steerIn = clamp(Math.atan2(2 * WB * (tx * -fz + tz * fx), tx * tx + tz * tz) / 0.5, -1, 1);
+        throttle = this.speed < 14 ? 1 : 0;
+      }
+    } else {
+      throttle = input.throttle; brake = input.brake; steerIn = input.steer;
+    }
+    // speed: fast on water, slow amphibious crawl on land
+    const maxV = onWater ? Math.max(this.autoSpeed, 10) : Math.min(this.autoSpeed, 15);
+    const boost = Math.max(0, maxV - 40) * 0.3;
+    let a = throttle * (6 + boost) * clamp(1 - this.speed / maxV, 0, 1);
+    if (brake) a -= this.speed > 0.5 ? 8 + boost : 3;
+    a -= this.speed * (onWater ? 0.06 : 0.4) + (this.speed > maxV ? (this.speed - maxV) * 1.5 : 0);
+    this.speed = Math.max(this.speed + a * dt, -6);
+    if (Math.abs(this.speed) < 0.05 && !throttle && !brake) this.speed = 0;
+    this.throttleIn = throttle; this.braking = brake > 0 && this.speed > 0.5;
+
+    // boats turn with a bit of drift; rudder needs flow
+    const turn = steerIn * 0.9 * clamp(Math.abs(this.speed) / 6, 0.15, 1) / (1 + Math.abs(this.speed) * 0.012);
+    this.yaw -= turn * Math.sign(this.speed || 1) * dt;
+    this.pos.x += Math.sin(this.yaw) * this.speed * dt;
+    this.pos.z += Math.cos(this.yaw) * this.speed * dt;
+    this.dist += Math.abs(this.speed) * dt;
+    this.steer = lerp(this.steer, steerIn * 0.4, 1 - Math.exp(-5 * dt));
+
+    // float on the waves / sit on the ground
+    const t = performance.now() * 0.001;
+    if (onWater) {
+      const wave = Math.sin(t * 1.3 + this.pos.x * 0.15) * 0.12 + Math.sin(t * 0.9 + this.pos.z * 0.11) * 0.1;
+      const yT = WATER_LEVEL + wave + Math.min(0.35, Math.abs(this.speed) * 0.012);
+      this.vy += ((yT - this.y) * 25 - this.vy * 6) * dt;
+      this.y += this.vy * dt;
+      const plane = clamp(this.speed / 25, 0, 1);
+      this.pitch = lerp(this.pitch, 0.1 * plane * (1 - plane * 0.4) + Math.sin(t * 1.7) * 0.025 + clamp(a, -5, 5) * 0.006, 1 - Math.exp(-4 * dt));
+      this.roll = lerp(this.roll, Math.sin(t * 1.1) * 0.035 + steerIn * 0.12 * plane, 1 - Math.exp(-3 * dt));
+    } else {
+      const g = w.groundAt(this.pos.x, this.pos.z);
+      const gf = w.groundAt(this.pos.x + fx * 2.5, this.pos.z + fz * 2.5), gb = w.groundAt(this.pos.x - fx * 2.5, this.pos.z - fz * 2.5);
+      this.y = lerp(this.y, g + 0.35, 1 - Math.exp(-10 * dt)); this.vy = 0;
+      this.pitch = lerp(this.pitch, Math.atan2(gf - gb, 5), 1 - Math.exp(-8 * dt));
+      this.roll = lerp(this.roll, 0, 1 - Math.exp(-5 * dt));
+    }
+    this.airborne = false;
+    this.altitude = 0;
+    if (this.motor) this.motor.rotation.z += this.speed * 3 * dt;
+    this._updateWake(dt, onWater);
+    this._finishPose(dt, 0, 0);
+  }
+
+  // foam trail behind the boat (additive white discs that spread and fade)
+  _updateWake(dt, onWater) {
+    if (!this.wake) {
+      const N = 140;
+      const g = new THREE.CircleGeometry(1, 16); g.rotateX(-Math.PI / 2);
+      const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+      this.wake = new THREE.InstancedMesh(g, m, N);
+      this.wake.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
+      this.wake.frustumCulled = false;
+      this.wakeP = Array.from({ length: N }, () => ({ x: 0, z: 0, age: 99, s: 1, k: 0 }));
+      this.wakeI = 0; this.wakeT = 0;
+      this.group.parent.add(this.wake);
+    }
+    this.wake.visible = true;
+    const sp = Math.abs(this.speed);
+    this.wakeT -= dt;
+    if (onWater && sp > 1.5 && this.wakeT <= 0) {
+      this.wakeT = 0.05;
+      const [fx, fz] = this.dir;
+      for (const side of [-1, 1]) {
+        const p = this.wakeP[this.wakeI]; this.wakeI = (this.wakeI + 1) % this.wakeP.length;
+        p.x = this.pos.x - fx * 3.2 - fz * side * 0.5; p.z = this.pos.z - fz * 3.2 + fx * side * 0.5;
+        p.age = 0; p.s = 0.6 + sp * 0.03; p.k = Math.min(1, sp / 12); p.vx = -fz * side * 1.2; p.vz = fx * side * 1.2;
+      }
+    }
+    const m4 = new THREE.Matrix4(), c = this.wake.instanceColor.array;
+    this.wakeP.forEach((p, i) => {
+      p.age += dt;
+      const life = 3.5, f = Math.max(0, 1 - p.age / life);
+      if (f > 0) { p.x += (p.vx || 0) * dt; p.z += (p.vz || 0) * dt; }
+      const sc = p.s * (1 + p.age * 1.4);
+      m4.makeScale(sc, 1, sc * 1.4); m4.setPosition(p.x, WATER_LEVEL + 0.06, p.z);
+      this.wake.setMatrixAt(i, m4);
+      const b = f * f * 0.32 * p.k;
+      c[i * 3] = b; c[i * 3 + 1] = b; c[i * 3 + 2] = b;
+    });
+    this.wake.instanceMatrix.needsUpdate = true;
+    this.wake.instanceColor.needsUpdate = true;
+  }
+
   // ---------------- airliner ----------------
   _buildJet() {
     const M = this.mats, P = this.paint, add = this._add.bind(this);
@@ -765,6 +944,7 @@ export class Car {
     this.onRoad = Math.abs(this.lat) < ROAD_HALF + SHOULDER + 0.3;
     if (this.model === 'plane' || this.model === 'jet') { this._updatePlane(dt, input, auto, loc); return; }
     if (this.model === 'heli') { this._updateHeli(dt, input, auto, loc); return; }
+    if (this.model === 'boat') { this._updateBoat(dt, input, auto, loc); return; }
 
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {
