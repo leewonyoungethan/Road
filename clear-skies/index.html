@@ -326,35 +326,35 @@
     let t = 0, clock = 8 * 60 + 14, sweep = 0;
     const DUR = 52;
     header('2단계 · 동부 항공교통 관제', '이상 신호를 찾으세요',
-      '트랜스폰더 신호가 끊겼다 켜졌다 하는 항공기(라벨이 깜박임)를 찾아 <b>탭/클릭</b>하면 조종실 잠금과 회항 경보가 전달됩니다. 정상 항공기는 선회만 할 뿐 신호는 끊기지 않습니다.');
+      '<b>주황색 링</b>이 깜박이는 항공기가 이상 신호를 보내는 비행기입니다. 링이 다 줄어들기 전에 <b>탭/클릭</b>하면 조종실 잠금과 회항 경보가 전달됩니다.');
     controls([]);
     const planes = [];
     const callsigns = ['DL1489','US6315','CO1702','NW253','UA2305','AA1922','DL2171','US2950','AF009','BA175','TW883','CO44'];
-    callsigns.forEach((cs, k) => {
+    callsigns.slice(0, 7).forEach((cs, k) => {
       const a = rand(0, Math.PI * 2), sp = rand(0.012, 0.022);
       planes.push({ cs, x: rand(.1, .9), y: rand(.1, .9), h: a, sp, alt: 'FL' + (240 + Math.floor(rand(0, 12)) * 10),
         turnAt: rand(4, DUR - 6), turnBy: rand(-1, 1), turned: false, target: false });
     });
     const boarded = shuffle(FLIGHTS.filter(f => G.flights[f.id].status === 'boarded'));
-    const slots = shuffle([5, 13, 21, 29]).slice(0, boarded.length).sort((a, b) => a - b);
+    const slots = shuffle([3, 14, 25, 36]).slice(0, boarded.length).sort((a, b) => a - b);
     boarded.forEach((f, k) => {
       const o = PORTS[f.org];
       planes.push({ cs: f.id, x: o[0] - 0.05, y: o[1] + 0.02, h: Math.PI + rand(-.25, .25), sp: 0.014, alt: 'FL310',
-        target: true, anomAt: slots[k] + rand(0, 3), anom: false, state: 'normal', left: 11, dest: f.org === 'IAD' ? [0.52, 0.7] : [0.7, 0.42] });
+        target: true, anomAt: slots[k] + rand(0, 3), anom: false, state: 'normal', left: 20, max: 20, dest: f.org === 'IAD' ? [0.52, 0.7] : [0.7, 0.42] });
     });
     let cooldown = 0;
     function onClick(px, py) {
       if (cooldown > 0) return;
-      let best = null, bd = 34;
-      planes.forEach(p => { const d = Math.hypot(p.x * W - px, p.y * H - py); if (d < bd && p.state !== 'saved' && p.state !== 'breach') { bd = d; best = p; } });
+      let best = null, bd = 48;
+      planes.forEach(p => { const d = Math.hypot(p.x * W - px, p.y * H - py) - (p.anom ? 30 : 0); if (d < bd && p.state !== 'saved' && p.state !== 'breach') { bd = d; best = p; } });
       if (!best) return;
       if (best.target && best.anom) {
         best.state = 'saved'; best.anom = false; G.flights[best.cs].status = 'diverted'; G.score += 150;
         toast(`${best.cs} · 조종실 잠금, 회항 지시 전달`, C.ok);
       } else if (best.target) {
-        toast(`${best.cs} · 아직 정상 교신 중입니다`, C.amber); cooldown = 0.8; G.score -= 10;
+        toast(`${best.cs} · 아직 정상 교신 중입니다`, C.amber); cooldown = 0.3; G.score -= 10;
       } else {
-        toast(`${best.cs} · 정상 항공편입니다`, C.amber); cooldown = 1.2; G.score -= 20;
+        toast(`${best.cs} · 정상 항공편입니다`, C.amber); cooldown = 0.4; G.score -= 20;
       }
     }
     function done() {
@@ -384,7 +384,7 @@
         planes.forEach(p => {
           if (p.state === 'breach') return;
           if (!p.target && !p.turned && t > p.turnAt) { p.turned = true; p.h += p.turnBy; }
-          if (p.target && p.state === 'normal' && t > p.anomAt) { p.state = 'anom'; p.anom = true; }
+          if (p.target && p.state === 'normal' && t > p.anomAt) { p.state = 'anom'; p.anom = true; toast(`이상 신호 감지 · ${p.cs}`, C.amber); }
           if (p.anom) {
             p.left -= dt;
             const want = Math.atan2(p.dest[1] - p.y, p.dest[0] - p.x);
@@ -425,8 +425,16 @@
           let ang = Math.atan2(py - cy, px - cx) - sweep; ang = ((ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
           const fade = 0.45 + 0.55 * Math.max(0, 1 - (Math.PI * 2 - ang) / 2.5);
           const xpdrOn = !p.anom || (Math.sin(now * 7 + p.x * 30) > 0.35 && Math.sin(now * 2.3) > -0.4);
+          if (p.anom) {
+            const pulse = 0.5 + 0.5 * Math.sin(now * 8);
+            ctx.strokeStyle = C.amber; ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.35 + 0.5 * pulse; ctx.beginPath(); ctx.arc(px, py, 18 + pulse * 6, 0, Math.PI * 2); ctx.stroke();
+            ctx.globalAlpha = 1; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, p.left / p.max)); ctx.stroke();
+            ctx.lineWidth = 1; ctx.font = `600 11px ${MONO}`; ctx.fillStyle = C.amber; ctx.textAlign = 'center';
+            ctx.fillText(`${p.cs} 신호 이상`, px, py - 36); ctx.textAlign = 'left';
+          }
           ctx.globalAlpha = fade;
-          const col = p.state === 'saved' ? C.ok : C.sky;
+          const col = p.state === 'saved' ? C.ok : p.anom ? C.amber : C.sky;
           // history trail
           ctx.fillStyle = col;
           for (let k = 1; k <= 4; k++) { ctx.globalAlpha = fade * (0.5 - k * 0.1); ctx.fillRect(px - Math.cos(p.h) * k * 9 - 1, py - Math.sin(p.h) * k * 9 - 1, 2, 2); }
