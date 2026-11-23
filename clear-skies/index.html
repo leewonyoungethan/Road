@@ -53,6 +53,9 @@
   #controls { display: flex; gap: 10px; min-height: 48px; align-items: stretch; }
   #controls button { flex: 1; padding: 14px 10px; }
   #hint { font-size: 13px; color: var(--muted); line-height: 1.5; min-height: 1.5em; }
+  .hr { display: flex; align-items: center; gap: 12px; }
+  button.sm { padding: 6px 10px; font-size: 12px; }
+  .rank { font: 700 clamp(64px, 16vw, 96px) var(--mono); color: var(--amber); line-height: 1; }
   kbd { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; color: var(--muted); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -63,7 +66,7 @@
       <div class="eyebrow" id="eyebrow">2001년 9월 11일 · 화요일</div>
       <div id="stageName">맑은 하늘</div>
     </div>
-    <div id="clock">07:30</div>
+    <div class="hr"><button id="mute" class="ghost sm" type="button">소리 켬</button><div id="clock">07:30</div></div>
   </header>
   <div id="stage">
     <canvas id="cv"></canvas>
@@ -104,6 +107,58 @@
   let G; // game state
   let scene = null;
   let toasts = [];
+  // ---------- juice: particles, floaters, shake, flash, sound ----------
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FX = { floats: [], parts: [], shake: 0, flash: 0, flashCol: '#fff' };
+  function pop(x, y, text, col) { FX.floats.push({ x, y, text, col, t: 1 }); }
+  function burst(x, y, col, n) { for (let k = 0; k < (n || 14); k++) { const a = rand(0, 6.28), v = rand(60, 260); FX.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: rand(.35, .8), col }); } }
+  function shake(a) { if (!REDUCED) FX.shake = Math.max(FX.shake, a); }
+  function flash(col, a) { FX.flash = a || .3; FX.flashCol = col; }
+  function fxUpdate(dt) {
+    FX.shake = Math.max(0, FX.shake - dt * 40); FX.flash = Math.max(0, FX.flash - dt * 1.2);
+    FX.parts.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.t -= dt; });
+    FX.parts = FX.parts.filter(p => p.t > 0);
+    FX.floats.forEach(f => { f.y -= 40 * dt; f.t -= dt; }); FX.floats = FX.floats.filter(f => f.t > 0);
+  }
+  function fxDraw() {
+    FX.parts.forEach(p => { ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillStyle = p.col; ctx.fillRect(p.x - 2, p.y - 2, 4, 4); });
+    ctx.textAlign = 'center'; ctx.font = `700 20px ${SANS}`;
+    FX.floats.forEach(f => { ctx.globalAlpha = Math.min(1, f.t * 2); ctx.fillStyle = f.col; ctx.fillText(f.text, f.x, f.y); });
+    if (FX.flash > 0) { ctx.globalAlpha = FX.flash; ctx.fillStyle = FX.flashCol; ctx.fillRect(-20, -20, W + 40, H + 40); }
+    ctx.globalAlpha = 1;
+  }
+  function drawCombo(text, level) {
+    const s = 1 + Math.min(0.5, level * 0.04) + 0.05 * Math.sin(performance.now() / 90);
+    ctx.save(); ctx.translate(W / 2, H - 44); ctx.scale(s, s);
+    ctx.textAlign = 'center'; ctx.font = `700 20px ${MONO}`; ctx.fillStyle = C.amber; ctx.fillText(text, 0, 0); ctx.restore();
+  }
+  let AC = null, muted = false;
+  function tone(f, d, type, v, delay, f2) {
+    const t0 = AC.currentTime + (delay || 0), o = AC.createOscillator(), g = AC.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + d);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(v || .15, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g); g.connect(AC.destination); o.start(t0); o.stop(t0 + d + 0.03);
+  }
+  function sfx(k) {
+    if (muted) return;
+    try {
+      if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+      if (AC.state === 'suspended') AC.resume();
+      switch (k) {
+        case 'good': tone(660, .12, 'triangle', .18); tone(990, .2, 'triangle', .18, .09); break;
+        case 'bad': tone(180, .22, 'square', .07, 0, 110); break;
+        case 'tick': tone(1250, .05, 'sine', .05); break;
+        case 'ping': tone(1500, .3, 'sine', .025, 0, 1350); break;
+        case 'alarm': [880, 660, 880].forEach((f, i) => tone(f, .13, 'square', .05, i * .16)); break;
+        case 'hit': tone(150, .09, 'sawtooth', .12, 0, 60); break;
+        case 'lose': tone(320, .6, 'sawtooth', .09, 0, 70); break;
+        case 'win': [523, 659, 784, 1047].forEach((f, i) => tone(f, .28, 'triangle', .15, i * .11)); break;
+      }
+    } catch (e) {}
+  }
+  $('#mute').onclick = () => { muted = !muted; $('#mute').textContent = muted ? '소리 끔' : '소리 켬'; if (!muted) sfx('tick'); };
+  const comboMult = () => 1 + Math.min(4, Math.floor(G.combo / 4));
+
   function toast(text, color) { toasts.push({ text, color: color || C.text, t: 2.4 }); if (toasts.length > 3) toasts.shift(); }
 
   // ---------- overlay & controls ----------
@@ -153,7 +208,7 @@
   }
 
   function startGame() {
-    G = { score: 0, flights: {} };
+    G = { score: 0, combo: 0, flights: {} }; sfx('good');
     FLIGHTS.forEach(f => G.flights[f.id] = { ...f, threats: 0, missed: 0, status: 'clear' });
     hideOverlay();
     scene = checkpointScene();
@@ -188,18 +243,29 @@
     const bags = makeBags();
     let i = -1, bag = null, wait = 0.8, clock = 7 * 60 + 35;
     const st = { caught: 0, missed: 0, falseAlarm: 0, ok: 0 };
+    let autoPass = 0;
     header('1단계 · 공항 보안검색대', '위험물을 찾아내세요',
-      '가방이 X선 창을 지날 때 내용물을 확인하세요. 흉기(커터칼·단검·면도칼)가 보이면 <b>정밀검색</b>. <kbd>←</kbd> 통과 · <kbd>→</kbd> 정밀검색');
+      '가방이 X선 창을 지날 때 내용물을 확인하세요. 흉기(커터칼·단검·면도칼)가 보이면 <b>정밀검색</b>. 오경보가 3번 쌓이면 가방 3개가 검사 없이 지나갑니다. <kbd>←</kbd> 통과 · <kbd>→</kbd> 정밀검색');
     function decide(inspect) {
       if (!bag || bag.done) return;
+      if (bag.forced) { if (inspect) { toast('줄이 밀려서 이 가방은 검사할 수 없습니다', C.amber); sfx('bad'); } return; }
       bag.done = true;
+      const bw = Math.min(260, W * 0.56), cx = Math.max(50, Math.min(W - 50, bag.x + bw / 2)), cy = H * 0.55;
       if (inspect) {
         bag.pull = 0;
-        if (bag.threat) { st.caught++; G.score += 100; const d = bag.items.find(x => x.bad); toast(`${d.l} 압수 · ${bag.flight} 탑승객 체포`, C.ok); }
-        else { st.falseAlarm++; G.score -= 20; wait += 0.9; toast('이상 없음 · 줄이 밀립니다', C.amber); }
+        if (bag.threat) {
+          st.caught++; G.combo++; const pts = 100 * comboMult(); G.score += pts; const d = bag.items.find(x => x.bad);
+          toast(`${d.l} 압수 · ${bag.flight} 탑승객 체포`, C.ok); pop(cx, cy - 50, `+${pts}`, C.ok); burst(cx, cy, C.ok, 26); flash(C.ok, .22); sfx('good');
+        } else {
+          st.falseAlarm++; G.combo = 0; G.score -= 20; wait += 0.9; toast('이상 없음 · 줄이 밀립니다', C.amber);
+          pop(cx, cy - 50, '-20', C.amber); shake(7); sfx('bad');
+          if (st.falseAlarm % 3 === 0) { autoPass = 3; setTimeout(() => toast('줄이 너무 길어요! 다음 가방 3개는 그냥 통과됩니다', C.alert), 700); }
+        }
       } else {
-        if (bag.threat) { st.missed++; G.flights[bag.flight].missed++; }
-        else { st.ok++; G.score += 10; }
+        if (bag.threat) {
+          st.missed++; G.combo = 0; G.flights[bag.flight].missed++;
+          toast(`놓쳤다! ${bag.flight}에 흉기 반입`, C.alert); flash(C.alert, .3); shake(12); sfx('lose');
+        } else { st.ok++; G.combo++; const pts = 10 * comboMult(); G.score += pts; pop(cx, cy - 50, `+${pts}`, C.sky); sfx('tick'); }
         bag.fast = true;
       }
     }
@@ -211,7 +277,7 @@
       i++;
       if (i >= bags.length) { finish(); return; }
       const dur = Math.max(2.7, 4.6 - i * 0.1);
-      bag = { ...bags[i], x: -1, dur, t: 0, done: false };
+      bag = { ...bags[i], x: -1, dur, t: 0, done: false, forced: autoPass > 0 }; if (autoPass > 0) autoPass--;
     }
     function finish() {
       scene = idleScene(); controls([]);
@@ -271,7 +337,7 @@
           ctx.restore();
           // flight tag
           ctx.fillStyle = C.amber; ctx.font = `600 12px ${MONO}`; ctx.textAlign = 'left';
-          if (bag.x + bw > 0 && bag.x < W) ctx.fillText(bag.flight, bag.x + 6, by - 8);
+          if (bag.x + bw > 0 && bag.x < W) ctx.fillText(bag.flight + (bag.forced ? '  · 자동 통과' : ''), bag.x + 6, by - 8);
         }
         // scanner frame & scanline
         ctx.strokeStyle = C.sky; ctx.globalAlpha = .5; ctx.strokeRect(sx, sy, sw, sh); ctx.globalAlpha = 1;
@@ -283,6 +349,7 @@
         ctx.textAlign = 'left'; ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`;
         ctx.fillText(`가방 ${Math.min(bags.length, i + 1)}/${bags.length}`, 12, H - 14);
         ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 14);
+        if (G.combo >= 3) drawCombo(`콤보 ${G.combo}  ×${comboMult()}`, G.combo);
         drawToasts();
       },
     };
@@ -349,12 +416,14 @@
       planes.forEach(p => { const d = Math.hypot(p.x * W - px, p.y * H - py) - (p.anom ? 30 : 0); if (d < bd && p.state !== 'saved' && p.state !== 'breach') { bd = d; best = p; } });
       if (!best) return;
       if (best.target && best.anom) {
-        best.state = 'saved'; best.anom = false; G.flights[best.cs].status = 'diverted'; G.score += 150;
+        const pts = 100 + Math.round(best.left * 5);
+        best.state = 'saved'; best.anom = false; G.flights[best.cs].status = 'diverted'; G.score += pts;
         toast(`${best.cs} · 조종실 잠금, 회항 지시 전달`, C.ok);
+        pop(best.x * W, best.y * H - 40, `+${pts}`, C.ok); burst(best.x * W, best.y * H, C.ok, 30); flash(C.ok, .2); sfx('good');
       } else if (best.target) {
-        toast(`${best.cs} · 아직 정상 교신 중입니다`, C.amber); cooldown = 0.3; G.score -= 10;
+        toast(`${best.cs} · 아직 정상 교신 중입니다`, C.amber); cooldown = 0.3; G.score -= 10; shake(5); sfx('bad'); pop(px, py - 20, '-10', C.amber);
       } else {
-        toast(`${best.cs} · 정상 항공편입니다`, C.amber); cooldown = 0.4; G.score -= 20;
+        toast(`${best.cs} · 정상 항공편입니다`, C.amber); cooldown = 0.4; G.score -= 20; shake(5); sfx('bad'); pop(px, py - 20, '-20', C.amber);
       }
     }
     function done() {
@@ -379,17 +448,17 @@
     const self = {
       click: onClick,
       update(dt) {
-        t += dt; clock += dt * 0.55; sweep = (sweep + dt * 1.6) % (Math.PI * 2); cooldown -= dt;
+        t += dt; clock += dt * 0.55; const ps = sweep; sweep = (sweep + dt * 1.6) % (Math.PI * 2); if (sweep < ps) sfx('ping'); cooldown -= dt;
         $('#clock').textContent = fmt(clock);
         planes.forEach(p => {
           if (p.state === 'breach') return;
           if (!p.target && !p.turned && t > p.turnAt) { p.turned = true; p.h += p.turnBy; }
-          if (p.target && p.state === 'normal' && t > p.anomAt) { p.state = 'anom'; p.anom = true; toast(`이상 신호 감지 · ${p.cs}`, C.amber); }
+          if (p.target && p.state === 'normal' && t > p.anomAt) { p.state = 'anom'; p.anom = true; toast(`이상 신호 감지 · ${p.cs}`, C.amber); sfx('alarm'); }
           if (p.anom) {
             p.left -= dt;
             const want = Math.atan2(p.dest[1] - p.y, p.dest[0] - p.x);
             let dh = want - p.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.h += Math.sign(dh) * Math.min(Math.abs(dh), dt * 0.5);
-            if (p.left <= 0) { p.state = 'breach'; p.anom = false; G.flights[p.cs].status = 'breach'; toast(`${p.cs} · 교신 두절`, C.alert); }
+            if (p.left <= 0) { p.state = 'breach'; p.anom = false; G.flights[p.cs].status = 'breach'; toast(`${p.cs} · 교신 두절`, C.alert); flash(C.alert, .3); shake(10); sfx('lose'); }
           }
           if (p.state === 'saved') { const o = PORTS.PHL; const want = Math.atan2(o[1] - p.y, o[0] - p.x); let dh = want - p.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.h += Math.sign(dh) * Math.min(Math.abs(dh), dt); }
           p.x += Math.cos(p.h) * p.sp * dt; p.y += Math.sin(p.h) * p.sp * dt;
@@ -475,6 +544,7 @@
     const hij = [];
     for (let k = 0; k < Math.min(4, n); k++) hij.push({ y: 0.58 + k * 0.08, side: (k % 2 ? 1 : -1) * 0.25, hp: 6, max: 6, hit: 0, sp: rand(0.045, 0.06), down: false });
     const rush = [];
+    let lastTap = -9, taps = 0, danger = 0;
     const geo = () => { const cw = Math.min(W * 0.86, 320); return { cw, x0: (W - cw) / 2, door: 56, rowTop: 84, rowBot: H - 24 }; };
     function toY(v, g) { return g.door + v * (g.rowBot - g.door); }
     const self = {
@@ -487,18 +557,21 @@
         best.hp--; best.hit = 0.15; best.y = Math.min(0.95, best.y + 0.022);
         const hx = W / 2 + best.side * 18, hy = toY(best.y, g);
         rush.push({ x: hx + pick([-1, 1]) * rand(30, g.cw / 2 - 10), y: hy + rand(-30, 30), tx: hx, ty: hy, t: 0.3 });
-        if (best.hp <= 0) { best.down = true; G.score += 60; toast('제압!', C.ok); }
+        taps = t - lastTap < 0.45 ? taps + 1 : 1; lastTap = t;
+        burst(hx, hy, C.sky, 6); shake(3); sfx('hit');
+        if (best.hp <= 0) { best.down = true; const pts = 60 + taps * 5; G.score += pts; pop(hx, hy - 24, `제압! +${pts}`, C.ok); burst(hx, hy, C.ok, 30); flash(C.ok, .18); sfx('good'); }
       },
       update(dt) {
         if (over) return;
         t += dt; clock += dt / 6; $('#clock').textContent = fmt(clock);
         hij.forEach(h => { if (!h.down) h.y -= h.sp * dt * (t < 1 ? 0.3 : 1); h.hit -= dt; });
+        danger = Math.max(0, 1 - Math.min(...hij.filter(h => !h.down).map(h => h.y), 1) / 0.22);
         rush.forEach(r => r.t -= dt); while (rush.length && rush[0].t <= 0) rush.shift();
         if (hij.some(h => !h.down && h.y <= 0.02)) {
-          over = true; G.flights[id].status = 'lost';
+          over = true; G.flights[id].status = 'lost'; flash(C.alert, .45); shake(16); sfx('lose');
           setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>조종실 문이 열렸습니다</h2><p>이 항공편은 지키지 못했습니다. 끝까지 맞선 승객과 승무원을 기억합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
         } else if (hij.every(h => h.down)) {
-          over = true; G.flights[id].status = 'retaken'; G.score += 200;
+          over = true; G.flights[id].status = 'retaken'; G.score += 200; sfx('win');
           setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>납치범을 제압했습니다</h2><p>승객과 승무원이 조종실을 지켜냈습니다. 조종사가 가장 가까운 공항으로 비상 착륙을 요청합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
         }
       },
@@ -539,6 +612,13 @@
             ctx.fillStyle = C.sky; for (let a = 0; a < 4; a++) { ctx.beginPath(); ctx.arc(hx + Math.cos(a * 1.6) * 14, hy + Math.sin(a * 1.6) * 14, 4, 0, Math.PI * 2); ctx.fill(); }
           }
         });
+        if (danger > 0 && !over) {
+          const gr = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
+          gr.addColorStop(0, 'rgba(232,89,79,0)'); gr.addColorStop(1, `rgba(232,89,79,${(0.25 + 0.2 * Math.sin(t * 12)) * danger})`);
+          ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = C.alert; ctx.font = `700 16px ${SANS}`; ctx.textAlign = 'center'; ctx.fillText('문 앞까지 왔다!', W / 2, 30);
+        }
+        if (taps >= 4 && t - lastTap < 0.6) drawCombo(`연타 ${taps}`, taps);
         ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 6);
         drawToasts();
       },
@@ -556,10 +636,17 @@
       const [cls, tx] = { clear: ['t-ok', '지상에서 위협 차단'], diverted: ['t-ok', '경보 후 안전 착륙'], retaken: ['t-warn', '승객들이 되찾음'], lost: ['t-bad', '지키지 못함'] }[s] || ['t-ok', '안전'];
       return `<li><b>${f.id}</b><span class="tag ${cls}">${tx}</span></li>`;
     }).join('');
+    const ground = FLIGHTS.filter(f => G.flights[f.id].status === 'clear').length;
+    const rank = safe === 4 ? (ground === 4 && G.score >= 600 ? 'S' : 'A') : safe === 3 ? 'B' : safe >= 1 ? 'C' : 'D';
+    let best = 0, newBest = false;
+    try { best = +localStorage.getItem('clearSkiesBest') || 0; if (G.score > best) { localStorage.setItem('clearSkiesBest', G.score); newBest = best > 0; best = G.score; } } catch (e) { best = G.score; }
+    sfx(safe === 4 ? 'win' : safe ? 'good' : 'lose');
     const head = safe === 4 ? '하늘은 맑은 채로 남았습니다' : safe === 0 ? '오늘은 막지 못했습니다' : `${safe}대의 항공기를 지켰습니다`;
     overlay(`
-      <div class="eyebrow">최종 점수 ${G.score}</div>
+      <div class="eyebrow">등급</div>
+      <div class="rank">${rank}</div>
       <h1>${head}</h1>
+      <p>최종 점수 <b>${G.score}</b> · 최고 기록 ${best}${newBest ? ' · <b style="color:var(--amber)">신기록!</b>' : ''}</p>
       <ul>${list}</ul>
       <p>실제 2001년 9월 11일에는 네 대의 항공기가 납치되어 2,977명이 목숨을 잃었습니다. UA93편의 승객과 승무원은 조종실을 되찾으려 맞섰고, 그 비행기는 목표에 닿지 못했습니다.</p>
       <p class="dim">이 게임은 그날의 희생자와 구조에 나선 모든 이들을 기억하기 위한 가상의 이야기입니다.</p>`,
@@ -576,7 +663,12 @@
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (W === 0) resize();
     toasts.forEach(t => t.t -= dt); toasts = toasts.filter(t => t.t > 0);
-    if (scene) { if ($('#ov').hidden) scene.update(dt); scene.draw(); }
+    if (scene) {
+      if ($('#ov').hidden) scene.update(dt);
+      fxUpdate(dt);
+      ctx.save(); if (FX.shake > 0) ctx.translate(rand(-FX.shake, FX.shake), rand(-FX.shake, FX.shake));
+      scene.draw(); fxDraw(); ctx.restore();
+    }
     requestAnimationFrame(loop);
   }
   title();
