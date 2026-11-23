@@ -1,0 +1,577 @@
+<title>맑은 하늘</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Layout: one-screen ops console — header clock, a single scope panel, control strip below. */
+  :root {
+    --ink: #0d1726;       /* page ground: pre-dawn navy */
+    --panel: #12233a;     /* scope surface */
+    --line: #26405f;      /* rules, grid */
+    --sky: #9fd0f5;       /* the clear-blue-sky accent */
+    --amber: #f0b54a;     /* clock, warnings */
+    --alert: #e8594f;     /* threats */
+    --ok: #63c98f;        /* safe */
+    --text: #e6eef7;
+    --muted: #8aa1bb;
+    --display: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--display); overflow: hidden;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #app { height: 100%; box-sizing: border-box; max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px;
+    padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+  .eyebrow { font: 600 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #stageName { font-size: clamp(17px, 3.2vw, 22px); font-weight: 700; margin-top: 2px; text-wrap: balance; }
+  #clock { font: 600 clamp(24px, 5vw, 34px) var(--mono); color: var(--amber); font-variant-numeric: tabular-nums; line-height: 1; }
+  #stage { flex: 1; min-height: 0; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  #cv { display: block; width: 100%; height: 100%; touch-action: manipulation; cursor: crosshair; }
+  #ov { position: absolute; inset: 0; overflow-y: auto; background: color-mix(in srgb, var(--ink) 90%, transparent); display: flex; }
+  #ov[hidden] { display: none; }
+  #ov .inner { margin: auto; max-width: 560px; padding: 28px 22px; display: flex; flex-direction: column; gap: 14px; }
+  #ov h1 { margin: 0; font-size: clamp(34px, 8vw, 58px); line-height: 1; letter-spacing: -.02em; color: var(--sky); text-wrap: balance; }
+  #ov h2 { margin: 0; font-size: clamp(22px, 5vw, 30px); text-wrap: balance; }
+  #ov p { margin: 0; line-height: 1.7; color: var(--text); }
+  #ov p.dim { color: var(--muted); font-size: 13px; }
+  #ov ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  #ov li { display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: baseline; font-size: 14px; }
+  #ov li b { font-family: var(--mono); }
+  .tag { font: 600 12px var(--mono); padding: 2px 8px; border-radius: 3px; justify-self: start; }
+  .t-ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .t-warn { background: color-mix(in srgb, var(--amber) 20%, transparent); color: var(--amber); }
+  .t-bad { background: color-mix(in srgb, var(--alert) 22%, transparent); color: var(--alert); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  button { font: 600 15px var(--display); color: var(--ink); background: var(--sky); border: 0; border-radius: 4px; padding: 12px 20px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.danger { background: var(--alert); color: #fff; }
+  button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: default; }
+  #controls { display: flex; gap: 10px; min-height: 48px; align-items: stretch; }
+  #controls button { flex: 1; padding: 14px 10px; }
+  #hint { font-size: 13px; color: var(--muted); line-height: 1.5; min-height: 1.5em; }
+  kbd { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 5px; color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="app">
+  <header>
+    <div>
+      <div class="eyebrow" id="eyebrow">2001년 9월 11일 · 화요일</div>
+      <div id="stageName">맑은 하늘</div>
+    </div>
+    <div id="clock">07:30</div>
+  </header>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="ov"><div class="inner" id="ovInner"></div></div>
+  </div>
+  <div id="hint"></div>
+  <div id="controls"></div>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const cv = $('#cv'), ctx = cv.getContext('2d');
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = {};
+  ['ink','panel','line','sky','amber','alert','ok','text','muted'].forEach(k => C[k] = css('--' + k));
+  const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+  const SANS = "'IBM Plex Sans KR', system-ui, sans-serif";
+  let W = 0, H = 0;
+  function resize() {
+    const r = $('#stage').getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
+    W = r.width; H = r.height; cv.width = Math.round(W * d); cv.height = Math.round(H * d);
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+  }
+  addEventListener('resize', resize); resize();
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const fmt = m => { m = Math.floor(m); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+
+  const FLIGHTS = [
+    { id: 'AA11',  route: '보스턴 → 로스앤젤레스', org: 'BOS' },
+    { id: 'UA175', route: '보스턴 → 로스앤젤레스', org: 'BOS' },
+    { id: 'AA77',  route: '워싱턴 덜레스 → 로스앤젤레스', org: 'IAD' },
+    { id: 'UA93',  route: '뉴어크 → 샌프란시스코', org: 'EWR' },
+  ];
+  let G; // game state
+  let scene = null;
+  let toasts = [];
+  function toast(text, color) { toasts.push({ text, color: color || C.text, t: 2.4 }); if (toasts.length > 3) toasts.shift(); }
+
+  // ---------- overlay & controls ----------
+  function overlay(html, buttons) {
+    $('#ovInner').innerHTML = html;
+    const row = document.createElement('div'); row.className = 'row';
+    (buttons || []).forEach(b => {
+      const el = document.createElement('button'); el.textContent = b.label; if (b.cls) el.className = b.cls;
+      el.onclick = b.go; row.appendChild(el);
+    });
+    $('#ovInner').appendChild(row);
+    $('#ov').hidden = false;
+    const f = row.querySelector('button'); if (f) f.focus();
+  }
+  function hideOverlay() { $('#ov').hidden = true; }
+  function controls(list) {
+    const c = $('#controls'); c.innerHTML = '';
+    list.forEach(b => { const el = document.createElement('button'); el.innerHTML = b.label; if (b.cls) el.className = b.cls; el.onclick = b.go; c.appendChild(el); });
+  }
+  function header(eyebrow, name, hint) { $('#eyebrow').textContent = eyebrow; $('#stageName').textContent = name; $('#hint').innerHTML = hint || ''; }
+
+  // ---------- title ----------
+  function title() {
+    scene = idleScene();
+    header('2001년 9월 11일 · 화요일', '맑은 하늘', '');
+    controls([]);
+    $('#clock').textContent = '07:30';
+    overlay(`
+      <div class="eyebrow">가상의 아침</div>
+      <h1>맑은 하늘</h1>
+      <p>그날 아침 미국 동부의 하늘은 구름 한 점 없이 맑았습니다. 이번에는 당신이 그 아침을 지킵니다.</p>
+      <ul>
+        <li><b>1단계</b><span>공항 보안검색대에서 X선 화면을 보고 흉기를 찾아내세요.</span></li>
+        <li><b>2단계</b><span>놓친 위협이 있다면, 관제 레이더에서 이상 신호를 보내는 항공기를 찾아 경보를 보내세요.</span></li>
+        <li><b>3단계</b><span>경보가 늦었다면, 기내에서 승객들과 함께 조종실로 향하는 납치범을 막으세요.</span></li>
+      </ul>
+      <p class="dim">실제 사건을 바탕으로 한 가상의 이야기입니다. 희생자와 유가족을 기리는 마음으로 만들었습니다.</p>`,
+      [{ label: '근무 시작', go: startGame }]);
+  }
+  function idleScene() {
+    return { update() {}, draw() { ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H); drawSky(); } };
+  }
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1d3d63'); g.addColorStop(1, C.panel);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+
+  function startGame() {
+    G = { score: 0, flights: {} };
+    FLIGHTS.forEach(f => G.flights[f.id] = { ...f, threats: 0, missed: 0, status: 'clear' });
+    hideOverlay();
+    scene = checkpointScene();
+  }
+
+  // ---------- STAGE 1: checkpoint ----------
+  const SAFE = [['💻','노트북'],['📚','책'],['👕','셔츠'],['📱','휴대폰'],['🔑','열쇠'],['📷','카메라'],['👓','안경'],['🎧','헤드폰'],
+    ['👛','지갑'],['☂️','우산'],['🍎','사과'],['🖊️','볼펜'],['🔦','손전등'],['🧦','양말'],['⏰','시계'],['🪥','칫솔'],['✏️','연필'],['🧸','인형'],['🥤','음료'],['💿','CD']];
+  const DANGER = [['🔪','커터칼'],['🗡️','단검'],['🪒','면도칼']];
+
+  function makeBags() {
+    const total = 20, bags = [];
+    for (let i = 0; i < total; i++) {
+      const n = 3 + Math.floor(Math.random() * 3);
+      const cells = shuffle([0,1,2,3,4,5]).slice(0, n + 1);
+      const items = shuffle(SAFE.slice()).slice(0, n).map((it, k) => ({ e: it[0], l: it[1], c: cells[k], r: rand(-.5, .5) }));
+      bags.push({ flight: FLIGHTS[i % 4].id, items, threat: false, spare: cells[n] });
+    }
+    // 6 threat bags; every flight gets at least one
+    const tf = shuffle(['AA11','UA175','AA77','UA93', pick(['AA11','UA175']), pick(['AA77','UA93'])]);
+    const idx = shuffle([...Array(total - 2)].map((_, i) => i + 2)).slice(0, 6);
+    idx.forEach((bi, k) => {
+      const b = bags[bi], d = pick(DANGER);
+      b.flight = tf[k]; b.threat = true;
+      b.items.push({ e: d[0], l: d[1], c: b.spare, r: rand(-1, 1), bad: true });
+      G.flights[tf[k]].threats++;
+    });
+    return bags;
+  }
+
+  function checkpointScene() {
+    const bags = makeBags();
+    let i = -1, bag = null, wait = 0.8, clock = 7 * 60 + 35;
+    const st = { caught: 0, missed: 0, falseAlarm: 0, ok: 0 };
+    header('1단계 · 공항 보안검색대', '위험물을 찾아내세요',
+      '가방이 X선 창을 지날 때 내용물을 확인하세요. 흉기(커터칼·단검·면도칼)가 보이면 <b>정밀검색</b>. <kbd>←</kbd> 통과 · <kbd>→</kbd> 정밀검색');
+    function decide(inspect) {
+      if (!bag || bag.done) return;
+      bag.done = true;
+      if (inspect) {
+        bag.pull = 0;
+        if (bag.threat) { st.caught++; G.score += 100; const d = bag.items.find(x => x.bad); toast(`${d.l} 압수 · ${bag.flight} 탑승객 체포`, C.ok); }
+        else { st.falseAlarm++; G.score -= 20; wait += 0.9; toast('이상 없음 · 줄이 밀립니다', C.amber); }
+      } else {
+        if (bag.threat) { st.missed++; G.flights[bag.flight].missed++; }
+        else { st.ok++; G.score += 10; }
+        bag.fast = true;
+      }
+    }
+    controls([
+      { label: '통과 <kbd>←</kbd>', cls: 'ghost', go: () => decide(false) },
+      { label: '정밀검색 <kbd>→</kbd>', cls: 'danger', go: () => decide(true) },
+    ]);
+    function next() {
+      i++;
+      if (i >= bags.length) { finish(); return; }
+      const dur = Math.max(2.7, 4.6 - i * 0.1);
+      bag = { ...bags[i], x: -1, dur, t: 0, done: false };
+    }
+    function finish() {
+      scene = idleScene(); controls([]);
+      FLIGHTS.forEach(f => { const s = G.flights[f.id]; if (s.missed > 0) s.status = 'boarded'; });
+      const boarded = FLIGHTS.filter(f => G.flights[f.id].status === 'boarded');
+      const list = FLIGHTS.map(f => {
+        const s = G.flights[f.id];
+        return `<li><b>${f.id}</b><span class="tag ${s.missed ? 't-bad' : 't-ok'}">${s.missed ? `흉기 ${s.missed}개 반입` : '위협 차단'}</span></li>`;
+      }).join('');
+      overlay(`
+        <div class="eyebrow">08:00 · 탑승 마감</div>
+        <h2>${boarded.length === 0 ? '모든 흉기를 지상에서 막았습니다' : `${boarded.length}개 항공편에 위협이 탑승했습니다`}</h2>
+        <p>압수 ${st.caught} · 놓침 ${st.missed} · 오경보 ${st.falseAlarm}</p>
+        <ul>${list}</ul>
+        <p class="dim">${boarded.length ? '아직 끝나지 않았습니다. 항공기가 이륙합니다. 관제 레이더로 이동하세요.' : '네 항공편 모두 평범한 비행을 시작합니다.'}</p>`,
+        [{ label: boarded.length ? '관제실로' : '결과 보기', go: () => { hideOverlay(); boarded.length ? (scene = radarScene()) : ending(); } }]);
+    }
+    const keyH = e => {
+      if (scene !== self) return;
+      if (e.key === 'ArrowLeft' || e.key === 'a') { e.preventDefault(); decide(false); }
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === ' ') { e.preventDefault(); decide(true); }
+    };
+    addEventListener('keydown', keyH);
+
+    const self = {
+      update(dt) {
+        clock += dt * 1.1; $('#clock').textContent = fmt(clock);
+        if (!bag) { wait -= dt; if (wait <= 0) next(); return; }
+        const bw = Math.min(260, W * 0.56);
+        const speed = (W + bw) / bag.dur * (bag.fast ? 3 : 1);
+        if (bag.pull !== undefined) { bag.pull += dt * 2.2; if (bag.pull >= 1) { bag = null; wait = Math.max(wait, 0.35); } return; }
+        if (bag.x < 0 && bag.t === 0) bag.x = -bw;
+        bag.t += dt; bag.x += speed * dt;
+        if (bag.x > W) { if (!bag.done) decide(false); bag = null; wait = Math.max(wait, 0.25); }
+      },
+      draw() {
+        ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
+        const bw = Math.min(260, W * 0.56), bh = Math.min(170, H * 0.42, bw * 0.66);
+        const beltY = H * 0.55, sw = bw * 1.18, sx = (W - sw) / 2, sy = beltY - bh / 2 - 22, sh = bh + 44;
+        // belt
+        ctx.fillStyle = '#0a1320'; ctx.fillRect(0, beltY + bh / 2 + 4, W, 16);
+        ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+        const off = (performance.now() / 12) % 24;
+        for (let x = -24 + off; x < W; x += 24) { ctx.beginPath(); ctx.moveTo(x, beltY + bh / 2 + 4); ctx.lineTo(x + 8, beltY + bh / 2 + 20); ctx.stroke(); }
+        // scanner housing
+        ctx.fillStyle = '#071019'; ctx.fillRect(sx - 8, sy - 8, sw + 16, sh + 16);
+        ctx.fillStyle = '#0b2a34'; ctx.fillRect(sx, sy, sw, sh);
+        if (bag) {
+          const by = beltY - bh / 2 + (bag.pull ? bag.pull * bag.pull * H * 0.6 : 0);
+          // bag outside scanner
+          ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(sx + sw, sy, -sw, sh); ctx.clip('evenodd');
+          drawBagShell(bag.x, by, bw, bh, '#5a4a3a', '#3d3127'); ctx.restore();
+          // xray view inside scanner
+          ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
+          drawBagShell(bag.x, by, bw, bh, 'rgba(255,170,80,0.18)', 'rgba(255,170,80,0.6)');
+          drawItems(bag, bag.x, by, bw, bh);
+          ctx.restore();
+          // flight tag
+          ctx.fillStyle = C.amber; ctx.font = `600 12px ${MONO}`; ctx.textAlign = 'left';
+          if (bag.x + bw > 0 && bag.x < W) ctx.fillText(bag.flight, bag.x + 6, by - 8);
+        }
+        // scanner frame & scanline
+        ctx.strokeStyle = C.sky; ctx.globalAlpha = .5; ctx.strokeRect(sx, sy, sw, sh); ctx.globalAlpha = 1;
+        const sl = sy + ((performance.now() / 6) % sh);
+        ctx.fillStyle = 'rgba(159,208,245,0.10)'; ctx.fillRect(sx, sl, sw, 2);
+        ctx.fillStyle = C.muted; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'center';
+        ctx.fillText('X-RAY  ·  검색대 3번', W / 2, sy - 16);
+        // HUD
+        ctx.textAlign = 'left'; ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`;
+        ctx.fillText(`가방 ${Math.min(bags.length, i + 1)}/${bags.length}`, 12, H - 14);
+        ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 14);
+        drawToasts();
+      },
+    };
+    return self;
+  }
+  function drawBagShell(x, y, w, h, fill, stroke) {
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
+    roundRect(x + w * 0.38, y - 14, w * 0.24, 20, 8); ctx.stroke();
+    roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke();
+  }
+  function drawItems(bag, x, y, w, h) {
+    const cw = w / 3, ch = h / 2, size = Math.min(cw, ch) * 0.52;
+    bag.items.forEach(it => {
+      const cx = x + cw * (it.c % 3 + 0.5), cy = y + ch * (Math.floor(it.c / 3) + 0.45);
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(it.r);
+      ctx.filter = 'grayscale(1) sepia(1) saturate(4) hue-rotate(150deg) brightness(1.15)';
+      ctx.font = `${size}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(it.e, 0, 0); ctx.restore();
+      ctx.filter = 'none';
+      ctx.fillStyle = 'rgba(180,230,240,0.75)'; ctx.font = `10px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText(it.l, cx, cy + size * 0.5 + 12);
+    });
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function drawToasts() {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    toasts.forEach((t, k) => {
+      ctx.globalAlpha = Math.min(1, t.t * 2);
+      ctx.font = `600 14px ${SANS}`; ctx.fillStyle = t.color;
+      ctx.fillText(t.text, W / 2, 26 + k * 22);
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- STAGE 2: radar ----------
+  const PORTS = { BOS: [0.86, 0.2], EWR: [0.66, 0.38], JFK: [0.71, 0.41], IAD: [0.5, 0.72], PHL: [0.6, 0.52] };
+  function radarScene() {
+    let t = 0, clock = 8 * 60 + 14, sweep = 0;
+    const DUR = 52;
+    header('2단계 · 동부 항공교통 관제', '이상 신호를 찾으세요',
+      '트랜스폰더 신호가 끊겼다 켜졌다 하는 항공기(라벨이 깜박임)를 찾아 <b>탭/클릭</b>하면 조종실 잠금과 회항 경보가 전달됩니다. 정상 항공기는 선회만 할 뿐 신호는 끊기지 않습니다.');
+    controls([]);
+    const planes = [];
+    const callsigns = ['DL1489','US6315','CO1702','NW253','UA2305','AA1922','DL2171','US2950','AF009','BA175','TW883','CO44'];
+    callsigns.forEach((cs, k) => {
+      const a = rand(0, Math.PI * 2), sp = rand(0.012, 0.022);
+      planes.push({ cs, x: rand(.1, .9), y: rand(.1, .9), h: a, sp, alt: 'FL' + (240 + Math.floor(rand(0, 12)) * 10),
+        turnAt: rand(4, DUR - 6), turnBy: rand(-1, 1), turned: false, target: false });
+    });
+    const boarded = shuffle(FLIGHTS.filter(f => G.flights[f.id].status === 'boarded'));
+    const slots = shuffle([5, 13, 21, 29]).slice(0, boarded.length).sort((a, b) => a - b);
+    boarded.forEach((f, k) => {
+      const o = PORTS[f.org];
+      planes.push({ cs: f.id, x: o[0] - 0.05, y: o[1] + 0.02, h: Math.PI + rand(-.25, .25), sp: 0.014, alt: 'FL310',
+        target: true, anomAt: slots[k] + rand(0, 3), anom: false, state: 'normal', left: 11, dest: f.org === 'IAD' ? [0.52, 0.7] : [0.7, 0.42] });
+    });
+    let cooldown = 0;
+    function onClick(px, py) {
+      if (cooldown > 0) return;
+      let best = null, bd = 34;
+      planes.forEach(p => { const d = Math.hypot(p.x * W - px, p.y * H - py); if (d < bd && p.state !== 'saved' && p.state !== 'breach') { bd = d; best = p; } });
+      if (!best) return;
+      if (best.target && best.anom) {
+        best.state = 'saved'; best.anom = false; G.flights[best.cs].status = 'diverted'; G.score += 150;
+        toast(`${best.cs} · 조종실 잠금, 회항 지시 전달`, C.ok);
+      } else if (best.target) {
+        toast(`${best.cs} · 아직 정상 교신 중입니다`, C.amber); cooldown = 0.8; G.score -= 10;
+      } else {
+        toast(`${best.cs} · 정상 항공편입니다`, C.amber); cooldown = 1.2; G.score -= 20;
+      }
+    }
+    function done() {
+      const remaining = planes.filter(p => p.target && p.state !== 'saved' && p.state !== 'breach');
+      return planes.filter(p => p.target).every(p => p.state === 'saved' || p.state === 'breach') || (t > DUR && remaining.length === 0);
+    }
+    function finish() {
+      scene = idleScene();
+      const breach = FLIGHTS.filter(f => G.flights[f.id].status === 'breach');
+      const list = FLIGHTS.map(f => {
+        const s = G.flights[f.id].status;
+        const [cls, tx] = s === 'clear' ? ['t-ok', '지상에서 차단'] : s === 'diverted' ? ['t-ok', '회항 · 안전 착륙 중'] : ['t-bad', '조종실 침입 시도'];
+        return `<li><b>${f.id}</b><span class="tag ${cls}">${tx}</span></li>`;
+      }).join('');
+      overlay(`
+        <div class="eyebrow">${fmt(clock)} · 관제 보고</div>
+        <h2>${breach.length ? `${breach.length}개 항공편에서 납치 시도가 시작되었습니다` : '모든 항공기가 경보를 받았습니다'}</h2>
+        <ul>${list}</ul>
+        <p class="dim">${breach.length ? '기내의 승객과 승무원에게 상황이 전해졌습니다. 이제 그들이 움직일 차례입니다.' : '조종실 문이 잠기고, 항공기들은 가장 가까운 공항으로 향합니다.'}</p>`,
+        [{ label: breach.length ? '기내로' : '결과 보기', go: () => { hideOverlay(); breach.length ? cabinQueue(breach.map(f => f.id)) : ending(); } }]);
+    }
+    const self = {
+      click: onClick,
+      update(dt) {
+        t += dt; clock += dt * 0.55; sweep = (sweep + dt * 1.6) % (Math.PI * 2); cooldown -= dt;
+        $('#clock').textContent = fmt(clock);
+        planes.forEach(p => {
+          if (p.state === 'breach') return;
+          if (!p.target && !p.turned && t > p.turnAt) { p.turned = true; p.h += p.turnBy; }
+          if (p.target && p.state === 'normal' && t > p.anomAt) { p.state = 'anom'; p.anom = true; }
+          if (p.anom) {
+            p.left -= dt;
+            const want = Math.atan2(p.dest[1] - p.y, p.dest[0] - p.x);
+            let dh = want - p.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.h += Math.sign(dh) * Math.min(Math.abs(dh), dt * 0.5);
+            if (p.left <= 0) { p.state = 'breach'; p.anom = false; G.flights[p.cs].status = 'breach'; toast(`${p.cs} · 교신 두절`, C.alert); }
+          }
+          if (p.state === 'saved') { const o = PORTS.PHL; const want = Math.atan2(o[1] - p.y, o[0] - p.x); let dh = want - p.h; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); p.h += Math.sign(dh) * Math.min(Math.abs(dh), dt); }
+          p.x += Math.cos(p.h) * p.sp * dt; p.y += Math.sin(p.h) * p.sp * dt;
+          if (!p.target) { if (p.x < -.05) p.x = 1.05; if (p.x > 1.05) p.x = -.05; if (p.y < -.05) p.y = 1.05; if (p.y > 1.05) p.y = -.05; }
+          else { p.x = Math.max(.03, Math.min(.97, p.x)); p.y = Math.max(.05, Math.min(.95, p.y)); }
+        });
+        if (done()) finish();
+      },
+      draw() {
+        ctx.fillStyle = '#081420'; ctx.fillRect(0, 0, W, H);
+        // grid & rings
+        ctx.strokeStyle = 'rgba(38,64,95,0.6)'; ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+        for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+        const cx = W / 2, cy = H / 2, R = Math.hypot(W, H) / 2;
+        ctx.strokeStyle = 'rgba(159,208,245,0.15)';
+        for (let r = R / 4; r <= R; r += R / 4) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); }
+        // sweep
+        const g = ctx.createConicGradient ? ctx.createConicGradient(sweep - 0.6, cx, cy) : null;
+        if (g) { g.addColorStop(0, 'rgba(159,208,245,0)'); g.addColorStop(0.095, 'rgba(159,208,245,0.16)'); g.addColorStop(0.0955, 'rgba(159,208,245,0)'); g.addColorStop(1, 'rgba(159,208,245,0)');
+          ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+        // airports
+        ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'left';
+        Object.entries(PORTS).forEach(([k, [x, y]]) => {
+          ctx.strokeStyle = C.muted; ctx.strokeRect(x * W - 3, y * H - 3, 6, 6);
+          ctx.fillStyle = C.muted; ctx.fillText(k, x * W + 7, y * H + 4);
+        });
+        // planes
+        const now = performance.now() / 1000;
+        planes.forEach(p => {
+          if (p.state === 'breach') return;
+          const px = p.x * W, py = p.y * H;
+          let ang = Math.atan2(py - cy, px - cx) - sweep; ang = ((ang % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const fade = 0.45 + 0.55 * Math.max(0, 1 - (Math.PI * 2 - ang) / 2.5);
+          const xpdrOn = !p.anom || (Math.sin(now * 7 + p.x * 30) > 0.35 && Math.sin(now * 2.3) > -0.4);
+          ctx.globalAlpha = fade;
+          const col = p.state === 'saved' ? C.ok : C.sky;
+          // history trail
+          ctx.fillStyle = col;
+          for (let k = 1; k <= 4; k++) { ctx.globalAlpha = fade * (0.5 - k * 0.1); ctx.fillRect(px - Math.cos(p.h) * k * 9 - 1, py - Math.sin(p.h) * k * 9 - 1, 2, 2); }
+          ctx.globalAlpha = fade;
+          if (xpdrOn) {
+            ctx.fillRect(px - 3, py - 3, 6, 6);
+            ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(p.h) * 16, py + Math.sin(p.h) * 16); ctx.stroke();
+            ctx.font = `600 11px ${MONO}`; ctx.fillStyle = col; ctx.fillText(p.cs, px + 8, py - 6);
+            ctx.font = `10px ${MONO}`; ctx.fillStyle = C.muted; ctx.fillText(p.state === 'saved' ? 'DIVERT' : p.alt, px + 8, py + 6);
+          } else {
+            ctx.strokeStyle = C.sky; ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        });
+        ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 14);
+        drawToasts();
+      },
+    };
+    return self;
+  }
+
+  // ---------- STAGE 3: cabin ----------
+  function cabinQueue(ids) {
+    const id = ids.shift();
+    if (!id) { ending(); return; }
+    const f = G.flights[id];
+    overlay(`
+      <div class="eyebrow">${id} · ${f.route}</div>
+      <h2>승객들이 일어섭니다</h2>
+      <p>납치범들이 통로를 따라 조종실 문으로 향합니다. 납치범을 빠르게 연타해 승객과 승무원이 그들을 붙잡도록 하세요. 한 명이라도 문에 닿으면 실패합니다.</p>`,
+      [{ label: '막아라', cls: 'danger', go: () => { hideOverlay(); scene = cabinScene(id, () => cabinQueue(ids)); } }]);
+  }
+  function cabinScene(id, next) {
+    header('3단계 · 기내', `${id} 조종실을 지키세요`, '빨간 점(납치범)을 <b>연타</b>하세요. 탭할 때마다 주변 승객이 달려들어 밀어냅니다.');
+    controls([]);
+    let t = 0, over = false, clock = 9 * 60 + 2 + Math.random() * 20;
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0) + (id === 'UA93' ? 0 : 1);
+    const hij = [];
+    for (let k = 0; k < Math.min(4, n); k++) hij.push({ y: 0.58 + k * 0.08, side: (k % 2 ? 1 : -1) * 0.25, hp: 6, max: 6, hit: 0, sp: rand(0.045, 0.06), down: false });
+    const rush = [];
+    const geo = () => { const cw = Math.min(W * 0.86, 320); return { cw, x0: (W - cw) / 2, door: 56, rowTop: 84, rowBot: H - 24 }; };
+    function toY(v, g) { return g.door + v * (g.rowBot - g.door); }
+    const self = {
+      click(px, py) {
+        if (over) return;
+        const g = geo();
+        let best = null, bd = 44;
+        hij.forEach(h => { if (h.down) return; const hx = W / 2 + h.side * 18, hy = toY(h.y, g); const d = Math.hypot(hx - px, hy - py); if (d < bd) { bd = d; best = h; } });
+        if (!best) return;
+        best.hp--; best.hit = 0.15; best.y = Math.min(0.95, best.y + 0.022);
+        const hx = W / 2 + best.side * 18, hy = toY(best.y, g);
+        rush.push({ x: hx + pick([-1, 1]) * rand(30, g.cw / 2 - 10), y: hy + rand(-30, 30), tx: hx, ty: hy, t: 0.3 });
+        if (best.hp <= 0) { best.down = true; G.score += 60; toast('제압!', C.ok); }
+      },
+      update(dt) {
+        if (over) return;
+        t += dt; clock += dt / 6; $('#clock').textContent = fmt(clock);
+        hij.forEach(h => { if (!h.down) h.y -= h.sp * dt * (t < 1 ? 0.3 : 1); h.hit -= dt; });
+        rush.forEach(r => r.t -= dt); while (rush.length && rush[0].t <= 0) rush.shift();
+        if (hij.some(h => !h.down && h.y <= 0.02)) {
+          over = true; G.flights[id].status = 'lost';
+          setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>조종실 문이 열렸습니다</h2><p>이 항공편은 지키지 못했습니다. 끝까지 맞선 승객과 승무원을 기억합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
+        } else if (hij.every(h => h.down)) {
+          over = true; G.flights[id].status = 'retaken'; G.score += 200;
+          setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>납치범을 제압했습니다</h2><p>승객과 승무원이 조종실을 지켜냈습니다. 조종사가 가장 가까운 공항으로 비상 착륙을 요청합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
+        }
+      },
+      draw() {
+        const g = geo();
+        ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
+        // fuselage
+        ctx.fillStyle = '#1b3150'; roundRect(g.x0, g.door - 30, g.cw, g.rowBot - g.door + 40, 40); ctx.fill();
+        // cockpit door
+        ctx.fillStyle = C.amber; ctx.fillRect(W / 2 - 22, g.door - 6, 44, 6);
+        ctx.fillStyle = C.muted; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText('조종실', W / 2, g.door - 14);
+        // aisle
+        ctx.fillStyle = '#142640'; ctx.fillRect(W / 2 - 22, g.door, 44, g.rowBot - g.door);
+        // seats & passengers
+        const rows = Math.max(6, Math.floor((g.rowBot - g.rowTop) / 26));
+        const seatW = (g.cw / 2 - 22 - 14) / 3;
+        for (let r = 0; r < rows; r++) {
+          const y = g.rowTop + r * 26;
+          for (const s of [-1, 1]) for (let c = 0; c < 3; c++) {
+            const x = s < 0 ? g.x0 + 10 + c * seatW : W / 2 + 24 + c * seatW;
+            ctx.fillStyle = '#2a4466'; roundRect(x + 1, y, seatW - 3, 18, 4); ctx.fill();
+            if ((r * 7 + c * 3 + (s > 0 ? 1 : 0)) % 4) { ctx.fillStyle = '#7fa8cf'; ctx.beginPath(); ctx.arc(x + seatW / 2 - 1, y + 9, 4, 0, Math.PI * 2); ctx.fill(); }
+          }
+        }
+        // rush lines
+        rush.forEach(r => { ctx.strokeStyle = C.sky; ctx.globalAlpha = r.t / 0.3; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.tx, r.ty); ctx.stroke(); });
+        ctx.globalAlpha = 1; ctx.lineWidth = 1;
+        // hijackers
+        hij.forEach(h => {
+          const hx = W / 2 + h.side * 18, hy = toY(h.y, g);
+          ctx.fillStyle = h.down ? C.muted : (h.hit > 0 ? '#fff' : C.alert);
+          ctx.beginPath(); ctx.arc(hx, hy, 9, 0, Math.PI * 2); ctx.fill();
+          if (!h.down) {
+            ctx.strokeStyle = C.alert; ctx.globalAlpha = 0.4 + 0.3 * Math.sin(t * 8); ctx.beginPath(); ctx.arc(hx, hy, 16, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+            ctx.fillStyle = '#0006'; ctx.fillRect(hx - 14, hy + 13, 28, 4);
+            ctx.fillStyle = C.alert; ctx.fillRect(hx - 14, hy + 13, 28 * h.hp / h.max, 4);
+          } else {
+            ctx.fillStyle = C.sky; for (let a = 0; a < 4; a++) { ctx.beginPath(); ctx.arc(hx + Math.cos(a * 1.6) * 14, hy + Math.sin(a * 1.6) * 14, 4, 0, Math.PI * 2); ctx.fill(); }
+          }
+        });
+        ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 6);
+        drawToasts();
+      },
+    };
+    return self;
+  }
+
+  // ---------- ending ----------
+  function ending() {
+    scene = idleScene(); controls([]);
+    header('2001년 9월 11일 · 오전', '결과', '');
+    const safe = FLIGHTS.filter(f => G.flights[f.id].status !== 'lost').length;
+    const list = FLIGHTS.map(f => {
+      const s = G.flights[f.id].status;
+      const [cls, tx] = { clear: ['t-ok', '지상에서 위협 차단'], diverted: ['t-ok', '경보 후 안전 착륙'], retaken: ['t-warn', '승객들이 되찾음'], lost: ['t-bad', '지키지 못함'] }[s] || ['t-ok', '안전'];
+      return `<li><b>${f.id}</b><span class="tag ${cls}">${tx}</span></li>`;
+    }).join('');
+    const head = safe === 4 ? '하늘은 맑은 채로 남았습니다' : safe === 0 ? '오늘은 막지 못했습니다' : `${safe}대의 항공기를 지켰습니다`;
+    overlay(`
+      <div class="eyebrow">최종 점수 ${G.score}</div>
+      <h1>${head}</h1>
+      <ul>${list}</ul>
+      <p>실제 2001년 9월 11일에는 네 대의 항공기가 납치되어 2,977명이 목숨을 잃었습니다. UA93편의 승객과 승무원은 조종실을 되찾으려 맞섰고, 그 비행기는 목표에 닿지 못했습니다.</p>
+      <p class="dim">이 게임은 그날의 희생자와 구조에 나선 모든 이들을 기억하기 위한 가상의 이야기입니다.</p>`,
+      [{ label: '다시 근무하기', go: startGame }, { label: '처음 화면', cls: 'ghost', go: title }]);
+  }
+
+  // ---------- input & loop ----------
+  cv.addEventListener('pointerdown', e => {
+    if (!scene || !scene.click) return;
+    const r = cv.getBoundingClientRect(); scene.click(e.clientX - r.left, e.clientY - r.top);
+  });
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (W === 0) resize();
+    toasts.forEach(t => t.t -= dt); toasts = toasts.filter(t => t.t > 0);
+    if (scene) { if ($('#ov').hidden) scene.update(dt); scene.draw(); }
+    requestAnimationFrame(loop);
+  }
+  title();
+  requestAnimationFrame(loop);
+})();
+</script>
