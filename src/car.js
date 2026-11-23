@@ -686,7 +686,11 @@ export class Car {
     if (!this.wake) {
       const N = 140;
       const g = new THREE.CircleGeometry(1, 16); g.rotateX(-Math.PI / 2);
-      const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+      const cx = cv.getContext('2d'), gr = cx.createRadialGradient(32, 32, 4, 32, 32, 32);
+      gr.addColorStop(0, '#888'); gr.addColorStop(0.55, '#ccc'); gr.addColorStop(0.8, '#555'); gr.addColorStop(1, '#000');
+      cx.fillStyle = gr; cx.fillRect(0, 0, 64, 64);
+      const m = new THREE.MeshBasicMaterial({ color: 0xffffff, map: new THREE.CanvasTexture(cv), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
       this.wake = new THREE.InstancedMesh(g, m, N);
       this.wake.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
       this.wake.frustumCulled = false;
@@ -714,7 +718,7 @@ export class Car {
       const sc = p.s * (1 + p.age * 1.4);
       m4.makeScale(sc, 1, sc * 1.4); m4.setPosition(p.x, WATER_LEVEL + 0.06, p.z);
       this.wake.setMatrixAt(i, m4);
-      const b = f * f * 0.32 * p.k;
+      const b = f * f * 0.13 * p.k;
       c[i * 3] = b; c[i * 3 + 1] = b; c[i * 3 + 2] = b;
     });
     this.wake.instanceMatrix.needsUpdate = true;
