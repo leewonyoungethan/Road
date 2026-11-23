@@ -318,6 +318,9 @@ export class World extends TerrainCore {
     }
     // delineator post + reflector
     this.postGeo = new THREE.BoxGeometry(0.1, 1.0, 0.1); this.postGeo.translate(0, 0.5, 0);
+    this.unitBox = new THREE.BoxGeometry(1, 1, 1);
+    this.concreteMat = new THREE.MeshStandardMaterial({ color: 0x9c978d, roughness: 0.9 });
+    this.railMat = new THREE.MeshStandardMaterial({ color: 0x8f8c86, roughness: 0.8 });
     this.reflGeo = new THREE.BoxGeometry(0.11, 0.14, 0.11); this.reflGeo.translate(0, 0.86, 0);
   }
 
@@ -358,9 +361,47 @@ export class World extends TerrainCore {
     const group = new THREE.Group();
     group.add(mesh);
 
-    // delineator posts every 48m on both sides
+    // bridges: deck slabs, railings and pillars wherever the road is high above the ground
+    const BH = [];
+    for (let i = i0; i <= i1 + 1; i++) BH.push(this.bridgeHeight(i));
+    const decks = [], rails = [], pillars = [];
+    for (let i = i0; i < i1 + 1 && i < this.rh.length - 1; i++) {
+      if (Math.min(BH[i - i0], BH[i + 1 - i0]) < 6.5) continue;
+      const x0 = this.rx[i], z0 = this.rz[i], x1 = this.rx[i + 1], z1 = this.rz[i + 1];
+      const yy = (this.rh[i] + this.rh[i + 1]) / 2, L = Math.hypot(x1 - x0, z1 - z0) + 0.06;
+      const fx = (x1 - x0) / L, fz = (z1 - z0) / L, a = Math.atan2(x1 - x0, z1 - z0);
+      const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+      decks.push([mx, yy - 0.62, mz, a, (ROAD_HALF + SHOULDER) * 2 + 0.8, 1.1, L]);
+      for (const sd of [-1, 1]) {
+        const lat = sd * (ROAD_HALF + SHOULDER + 0.25);
+        rails.push([mx - fz * lat, yy + 0.25, mz + fx * lat, a, 0.25, 0.6, L]);
+      }
+      if (i % 6 === 0) {
+        const ground = Math.max(this.rh[i] - BH[i - i0] - 0.12, -45);
+        const top = this.rh[i] - 1.1, hgt = top - ground + 1;
+        for (const sd of [-1, 1]) {
+          const lat = sd * 2.6;
+          pillars.push([x0 - fz * lat, ground - 1 + hgt / 2, z0 + fx * lat, a, 1.4, hgt, 1.4]);
+        }
+        pillars.push([x0, top - 0.5, z0, a, (ROAD_HALF + SHOULDER) * 2, 1.0, 1.6]); // cross beam
+      }
+    }
+    const boxes = (list, mat, shadow) => {
+      if (!list.length) return;
+      const im = new THREE.InstancedMesh(this.unitBox, mat, list.length);
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+      list.forEach(([x, y, z, a, w, h, d], k) => { q.setFromAxisAngle(up, a); p.set(x, y, z); sc.set(w, h, d); m4.compose(p, q, sc); im.setMatrixAt(k, m4); });
+      im.castShadow = shadow; im.receiveShadow = true; im.computeBoundingSphere();
+      group.add(im);
+    };
+    boxes(decks, this.concreteMat, this.quality.shadows);
+    boxes(rails, this.railMat, false);
+    boxes(pillars, this.concreteMat, this.quality.shadows);
+
+    // delineator posts every 48m on both sides (not on bridges)
     const posts = [];
     for (let i = i0; i < i1; i += 12) {
+      if (BH[i - i0] > 6.5) continue;
       const c = i + 1;
       let fx = this.rx[c] - this.rx[i], fz = this.rz[c] - this.rz[i];
       const L = Math.hypot(fx, fz); fx /= L; fz /= L;

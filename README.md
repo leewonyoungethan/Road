@@ -11,7 +11,7 @@ npx serve .        # 또는: python3 -m http.server
 ```
 
 브라우저에서 `http://localhost:3000` (python은 `:8000`) 접속. GitHub Pages에 올려도 그대로 동작합니다.
-특정 세계를 다시 보려면 주소 뒤에 `#seed=12345` 를 붙이세요. 세계 유형은 `&type=plains` (plains · hills · alpine · lakes · desert · mixed) 로 고를 수 있고, 시작 화면에서도 선택할 수 있습니다.
+특정 세계를 다시 보려면 주소 뒤에 `#seed=12345` 를 붙이세요. 세계 유형은 `&type=plains` (plains · hills · alpine · lakes · desert · mixed · ocean) 로 고를 수 있고, 시작 화면에서도 선택할 수 있습니다.
 
 도로를 벗어나도 감속이나 경사 저항이 없어서 산 위나 호수 위로도 자유롭게 달릴 수 있습니다.
 

@@ -25,6 +25,7 @@ export const WORLD_TYPES = {
   lakes: { name: '호수', flat: 0.45, mtn: 0.55, hill: 0.8, dry: -0.3, forest: 1.1, lake: 0.38 },
   desert: { name: '사막', flat: 0.55, mtn: 0.85, hill: 0.75, dry: 1.0, forest: 0.12, lake: -0.45 },
   mixed: { name: '혼합', flat: 0.4, mtn: 0.95, hill: 1.0, dry: 0.0, forest: 1.0, lake: 0.05 },
+  ocean: { name: '바다', flat: 0.35, mtn: 0.75, hill: 0.9, dry: -0.15, forest: 1.0, lake: 0.95, roadMin: 6 },
 };
 
 export class TerrainCore {
@@ -109,7 +110,7 @@ export class TerrainCore {
     const n = this.rx.length;
     if (n === 0) {
       this.rx.push(0); this.rz.push(0); this.hd.push(0);
-      this.rawH.push(Math.max(this.baseHeight(0, 0), 3.5));
+      this.rawH.push(Math.max(this.baseHeight(0, 0), this.P.roadMin || 3.5));
       return;
     }
     const x0 = this.rx[n - 1], z0 = this.rz[n - 1];
@@ -138,7 +139,7 @@ export class TerrainCore {
     const x = x0 + Math.sin(this.heading) * STEP;
     const z = z0 + Math.cos(this.heading) * STEP;
     this.rx.push(x); this.rz.push(z); this.hd.push(this.heading);
-    this.rawH.push(Math.max(this.baseHeight(x, z), 3.5));
+    this.rawH.push(Math.max(this.baseHeight(x, z), this.P.roadMin || 3.5));
   }
 
   _finalize() {
@@ -215,12 +216,22 @@ export class TerrainCore {
     this.lastD = q.d;
     const inner = ROAD_HALF + SHOULDER + 0.3;
     const target = q.h - 0.12;
-    if (q.d <= inner) return target;
-    const diff = Math.abs(b - target);
-    const width = Math.min(5 + diff * 1.8, CELL - inner - 2);
-    if (q.d >= inner + width) return b;
-    return lerp(target, b, smoothstep(inner, inner + width, q.d));
+    // where the road runs high above the ground (sea, deep valleys) it is a bridge: leave the terrain alone
+    const br = smoothstep(5, 9, target - b);
+    if (br >= 1) return b;
+    let h;
+    if (q.d <= inner) h = target;
+    else {
+      const diff = Math.abs(b - target);
+      const width = Math.min(5 + diff * 1.8, CELL - inner - 2);
+      if (q.d >= inner + width) return b;
+      h = lerp(target, b, smoothstep(inner, inner + width, q.d));
+    }
+    return br > 0 ? lerp(h, b, br) : h;
   }
+
+  // how far the road deck at index i sits above the natural ground (bridges where > ~7m)
+  bridgeHeight(i) { return this.rh[i] - 0.12 - this.baseHeight(this.rx[i], this.rz[i]); }
 
   // drivable surface height (road if on it, otherwise terrain)
   groundAt(x, z) {

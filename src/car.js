@@ -23,7 +23,7 @@ const MODEL_DIMS = {
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
   heli: { wb: 2.0, track: 2.0, wr: 0.3, tyreW: 0.1, camDist: 15, camH: 5, hood: [0, 1.95, 1.35] },
-  boat: { wb: 3.0, track: 1.6, wr: 0.3, tyreW: 0.1, camDist: 11, camH: 3.4, hood: [0, 1.55, 0.2] },
+  boat: { wb: 5.0, track: 2.6, wr: 0.3, tyreW: 0.1, camDist: 19, camH: 6, hood: [0, 1.7, 0.3], scale: 1.75 },
   jet: { wb: 14, track: 7, wr: 0.6, tyreW: 0.4, camDist: 62, camH: 15, hood: [0, 5.3, 16.6] },
   plane: { wb: 1.9, track: 2.2, wr: 0.26, tyreW: 0.14, camDist: 17, camH: 4.5, hood: [0, 2.12, 0.15] },
   bike: { wb: 1.45, track: 0.2, wr: 0.31, tyreW: 0.16, camDist: 5.4, camH: 1.8, hood: [0, 1.42, -0.05] },
@@ -129,6 +129,7 @@ export class Car {
     const D = MODEL_DIMS[name];
     WB = D.wb; TRACK = D.track; WR = D.wr;
     this.camDist = D.camDist; this.camH = D.camH; this.hoodCam = D.hood;
+    this.modelScale = D.scale || 1; this.body.scale.setScalar(this.modelScale);
     this.fz = WB / 2 + 0.05; this.rz = -WB / 2 + 0.05;
     if (name === 'sports') this._buildSports();
     else if (name === 'suv') this._buildSUV();
@@ -595,7 +596,10 @@ export class Car {
       const n = Math.max(1, Math.floor((2 * Math.PI * r) / 40));
       for (let k = 0; k < n; k++) {
         const a = (k / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-        if (deep(px, pz) && deep(px + 25, pz) && deep(px - 25, pz) && deep(px, pz + 25) && deep(px, pz - 25)) return { x: px, z: pz };
+        if (!(deep(px, pz) && deep(px + 25, pz) && deep(px - 25, pz) && deep(px, pz + 25) && deep(px, pz - 25))) continue;
+        const q = w.roadQuery(px, pz);
+        if (q.found && q.d < 35) continue; // not right under a bridge
+        return { x: px, z: pz };
       }
     }
     return null;
@@ -617,7 +621,7 @@ export class Car {
     if (auto) {
       if (onWater) {
         // cruise the lake: wander gently and steer away from the shore
-        const look = 25 + Math.abs(this.speed) * 2.2;
+        const look = 35 + Math.abs(this.speed) * 2.4;
         const land = (a) => w.heightAt(this.pos.x + Math.sin(this.yaw + a) * look, this.pos.z + Math.cos(this.yaw + a) * look) > WATER_LEVEL - 0.6;
         const L = land(0.5), C = land(0), R = land(-0.5);
         this.wander = (this.wander || 0) + (Math.random() - 0.5) * dt * 0.6;
@@ -706,8 +710,9 @@ export class Car {
       const [fx, fz] = this.dir;
       for (const side of [-1, 1]) {
         const p = this.wakeP[this.wakeI]; this.wakeI = (this.wakeI + 1) % this.wakeP.length;
-        p.x = this.pos.x - fx * 3.2 - fz * side * 0.5; p.z = this.pos.z - fz * 3.2 + fx * side * 0.5;
-        p.age = 0; p.s = 0.6 + sp * 0.03; p.k = Math.min(1, sp / 12); p.vx = -fz * side * 1.2; p.vz = fx * side * 1.2;
+        const S = this.modelScale;
+        p.x = this.pos.x - fx * 3.2 * S - fz * side * 0.5 * S; p.z = this.pos.z - fz * 3.2 * S + fx * side * 0.5 * S;
+        p.age = 0; p.s = (0.6 + sp * 0.03) * S; p.k = Math.min(1, sp / 12); p.vx = -fz * side * 1.2; p.vz = fx * side * 1.2;
       }
     }
     const m4 = new THREE.Matrix4(), c = this.wake.instanceColor.array;
