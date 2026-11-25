@@ -74,7 +74,7 @@ waterNormals.repeat.set(WATER_SIZE / WATER_TILE, WATER_SIZE / WATER_TILE);
 waterNormals2.repeat.set(WATER_SIZE / (WATER_TILE * 2.7), WATER_SIZE / (WATER_TILE * 2.7));
 const waterMat = new THREE.MeshPhysicalMaterial({
   color: 0x06222c, roughness: 0.1, metalness: 0, normalMap: waterNormals, normalScale: new THREE.Vector2(0.12, 0.12),
-  envMapIntensity: 0.75, transparent: true, opacity: 0.9, ior: 1.33, specularIntensity: 0.6,
+  envMapIntensity: 0.75, transparent: true, opacity: 0.9, ior: 1.33, specularIntensity: 0.6, side: THREE.DoubleSide,
 });
 const waterGeo = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE, 1, 1); waterGeo.rotateX(-Math.PI / 2);
 const water = new THREE.Mesh(waterGeo, waterMat);
@@ -147,7 +147,7 @@ addEventListener('keydown', (e) => {
   }
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   // any manual drive key takes over from autopilot
-  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || ((car.model === 'plane' || car.model === 'jet') && ['KeyS', 'ArrowDown'].includes(e.code)) || (car.model === 'heli' && ['KeyS', 'ArrowDown', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ'].includes(e.code)))) { toggleAuto(); }
+  if (autoDrive && (['KeyW', 'ArrowUp', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(e.code) || ((car.model === 'plane' || car.model === 'jet') && ['KeyS', 'ArrowDown'].includes(e.code)) || ((car.model === 'heli' || car.model === 'sub') && ['KeyS', 'ArrowDown', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyQ'].includes(e.code)))) { toggleAuto(); }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -206,14 +206,15 @@ function setModel(m) {
   car.setModel(m);
   car.y += 0.6; car.vy = 0; // drop in gently so bigger wheels don't clip the ground
   refreshUI();
-  if (m === 'boat') {
-    toast(car.toWater() ? '배: 가까운 호수로 이동했어요' : '배: 근처에 호수가 없어 육지에서 천천히 달려요 (호수를 찾으면 R)');
+  if (m === 'boat' || m === 'sub') {
+    const nm = CAR_MODEL_NAMES[m];
+    toast(car.toWater() ? `${nm}: 가까운 물로 이동했어요${m === 'sub' ? ' — Shift/Q로 잠수, Space로 부상' : ''}` : `${nm}: 근처에 물이 없어 육지에서 천천히 달려요 (바다·호수 세계 추천, R로 다시 찾기)`);
   } else toast(`차종: ${CAR_MODEL_NAMES[m]}`);
 }
 function cycleModel() { setModel(CAR_MODELS[(CAR_MODELS.indexOf(car.model) + 1) % CAR_MODELS.length]); }
 function toggleMute() { const m = audio.cycle(); refreshUI(); toast(`소리: ${SOUND_NAMES[m]}`); }
 function resetCar() {
-  if (car.model === 'boat') { toast(car.toWater() ? '가까운 호수로 이동' : '근처에 호수가 없어요'); return; }
+  if (car.model === 'boat' || car.model === 'sub') { toast(car.toWater() ? '가까운 호수로 이동' : '근처에 호수가 없어요'); return; }
   car.placeOnRoad(car.idx + 2); toast('도로로 복귀');
 }
 function setQuality(k) {
@@ -237,7 +238,7 @@ function refreshUI() {
   document.querySelectorAll('[data-car]').forEach((b) => b.classList.toggle('active', b.dataset.car === car.model));
   ui.clouds.querySelector('span').textContent = WEATHER_NAMES[WEATHERS[weatherIdx]];
   document.body.classList.toggle('manual', !autoDrive);
-  document.body.classList.toggle('heli', car.model === 'heli');
+  document.body.classList.toggle('heli', car.model === 'heli' || car.model === 'sub');
 }
 ui.auto.onclick = toggleAuto; ui.cam.onclick = cycleCam; ui.time.onclick = cycleTime; ui.sound.onclick = toggleMute;
 ui.clouds.onclick = cycleClouds; ui.color.onclick = cycleColor; ui.model.onclick = cycleModel;
@@ -284,7 +285,7 @@ function updateCamera(dt) {
     const a = camYaw + orbit;
     const dist = car.camDist + Math.abs(car.speed) * 0.02, height = car.camH + orbitPitch * 6;
     v3.set(cp.x - Math.sin(a) * dist, cp.y + height, cp.z - Math.cos(a) * dist);
-    const gmin = world.groundAt(v3.x, v3.z) + 0.8;
+    const gmin = (car.model === 'sub' ? world.heightAt(v3.x, v3.z) : world.groundAt(v3.x, v3.z)) + 0.8;
     if (v3.y < gmin) v3.y = gmin;
     v3.sub(cp);
     camOff.lerp(v3, 1 - Math.exp(-dt * 10));
@@ -334,7 +335,7 @@ function updateCamera(dt) {
 const START_IDX = 160;
 world.ensureRoad(START_IDX * STEP + quality.view * CHUNK + 400);
 car.placeOnRoad(START_IDX, LANE);
-if (car.model === 'boat') car.toWater();
+if (car.model === 'boat' || car.model === 'sub') car.toWater();
 car.onLand = (impact, t) => { if (t > 1.2) toast(`${t.toFixed(1)}초 비행 — 착지!`); };
 let speedKmh = (() => { try { return parseFloat(localStorage.getItem('wr-speed')); } catch { return NaN; } })();
 if (!Number.isFinite(speedKmh)) speedKmh = 80;
@@ -396,8 +397,17 @@ function frame() {
   atmo.update(dt, camera, car.group.position);
   world.sharedUniforms.uSnow.value = atmo.w.snowCover * 0.95;
   world.setWetness(atmo.w.wet);
-  precip.update(dt, camera, atmo.w.rain, atmo.w.snow, atmo.light, renderer.domElement.height);
   updateCamera(dt);
+  // underwater: thick blue-green fog, no rain/snow
+  const underwater = camera.position.y < -0.15 && world.heightAt(camera.position.x, camera.position.z) < camera.position.y;
+  if (underwater) {
+    const deep = clamp(-camera.position.y / 40, 0, 1);
+    const L = Math.max(0.15, atmo.light || 0.5);
+    scene.fog.color.setRGB((0.02 - 0.012 * deep) * L, (0.12 - 0.07 * deep) * L, (0.14 - 0.07 * deep) * L);
+    scene.fog.density = 0.018 + deep * 0.012;
+  }
+  document.body.classList.toggle('underwater', underwater);
+  precip.update(dt, camera, underwater ? 0 : atmo.w.rain, underwater ? 0 : atmo.w.snow, atmo.light, renderer.domElement.height);
 
   water.position.x = Math.round(camera.position.x / WATER_TILE) * WATER_TILE;
   water.position.z = Math.round(camera.position.z / WATER_TILE) * WATER_TILE;
@@ -410,7 +420,8 @@ function frame() {
   // HUD
   const kmh = Math.abs(car.speed) * 3.6;
   ui.speed.textContent = Math.round(kmh);
-  if (car.model === 'plane' || car.model === 'jet' || car.model === 'heli') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
+  if (car.model === 'sub') { ui.gearLbl.textContent = '수심'; ui.gear.textContent = `${Math.round(car.depth || 0)} m`; }
+  else if (car.model === 'plane' || car.model === 'jet' || car.model === 'heli') { ui.gearLbl.textContent = '고도'; ui.gear.textContent = `${Math.max(0, Math.round(car.altitude || 0))} m`; }
   else { ui.gearLbl.textContent = '기어'; ui.gear.textContent = car.speed < -0.3 ? 'R' : car.speed < 0.3 ? 'N' : car.gear; }
   ui.dist.textContent = (car.dist / 1000).toFixed(1);
   const hh = Math.floor(atmo.time), mm = Math.floor((atmo.time - hh) * 60);

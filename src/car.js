@@ -15,14 +15,15 @@ const FLIGHT = {
 };
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'boat', 'plane', 'jet', 'heli'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터', boat: '배' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'boat', 'sub', 'plane', 'jet', 'heli'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터', boat: '배', sub: '잠수함' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
   heli: { wb: 2.0, track: 2.0, wr: 0.3, tyreW: 0.1, camDist: 15, camH: 5, hood: [0, 1.95, 1.35] },
+  sub: { wb: 8, track: 2.6, wr: 0.3, tyreW: 0.1, camDist: 26, camH: 6, hood: [0, 3.6, 2.6] },
   boat: { wb: 5.0, track: 2.6, wr: 0.3, tyreW: 0.1, camDist: 19, camH: 6, hood: [0, 1.7, 0.3], scale: 1.75 },
   jet: { wb: 14, track: 7, wr: 0.6, tyreW: 0.4, camDist: 62, camH: 15, hood: [0, 5.3, 16.6] },
   plane: { wb: 1.9, track: 2.2, wr: 0.26, tyreW: 0.14, camDist: 17, camH: 4.5, hood: [0, 2.12, 0.15] },
@@ -137,11 +138,14 @@ export class Car {
     else if (name === 'plane') this._buildPlane();
     else if (name === 'jet') this._buildJet();
     else if (name === 'boat') this._buildBoat();
+    else if (name === 'sub') this._buildSub();
     else if (name === 'heli') this._buildHeli();
     else this._buildBike();
     this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0; this.aglTarget = 0; this.vy = 0; this.rotorRate = 0; this.heliV = 0;
-    if (name !== 'jet') this.cabinMat = null;
-    if (this.wake) this.wake.visible = name === 'boat';
+    if (name !== 'jet' && name !== 'sub') this.cabinMat = null;
+    if (this.wake) this.wake.visible = name === 'boat' || name === 'sub';
+    if (this.bubbles) this.bubbles.visible = name === 'sub';
+    this.depthT = 0; this.depth = 0;
     this.lean = 0;
   }
 
@@ -591,7 +595,8 @@ export class Car {
   // nearest open water (deep enough for a boat) around x,z, or null
   findWater(x, z, maxR = 3500) {
     const w = this.world;
-    const deep = (px, pz) => w.baseHeight(px, pz) < WATER_LEVEL - 2.5;
+    const need = this.model === 'sub' ? 9 : 2.5;
+    const deep = (px, pz) => w.baseHeight(px, pz) < WATER_LEVEL - need;
     for (let r = 0; r <= maxR; r += 40) {
       const n = Math.max(1, Math.floor((2 * Math.PI * r) / 40));
       for (let k = 0; k < n; k++) {
@@ -614,15 +619,24 @@ export class Car {
 
   _updateBoat(dt, input, auto, loc) {
     const w = this.world;
-    const onWater = w.heightAt(this.pos.x, this.pos.z) < WATER_LEVEL - 0.25;
+    const sub = this.model === 'sub';
+    const seabed = w.heightAt(this.pos.x, this.pos.z);
+    const onWater = seabed < WATER_LEVEL - 0.25;
     this.onWater = onWater;
+    const room = Math.max(0, WATER_LEVEL - seabed - 4.5); // how deep the sub may go here
+    if (sub) {
+      if (auto) this.depthT = lerp(this.depthT || 0, Math.min(14, room), 1 - Math.exp(-0.25 * dt));
+      else { if (input.down) this.depthT += 6 * dt; if (input.up) this.depthT -= 6 * dt; }
+      this.depthT = clamp(this.depthT || 0, 0, room);
+    }
     const [fx, fz] = this.dir;
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {
       if (onWater) {
         // cruise the lake: wander gently and steer away from the shore
         const look = 35 + Math.abs(this.speed) * 2.4;
-        const land = (a) => w.heightAt(this.pos.x + Math.sin(this.yaw + a) * look, this.pos.z + Math.cos(this.yaw + a) * look) > WATER_LEVEL - 0.6;
+        const shallow = sub ? (this.depth || 0) + 5 : 0.6;
+        const land = (a) => w.heightAt(this.pos.x + Math.sin(this.yaw + a) * look, this.pos.z + Math.cos(this.yaw + a) * look) > WATER_LEVEL - shallow;
         const L = land(0.5), C = land(0), R = land(-0.5);
         this.wander = (this.wander || 0) + (Math.random() - 0.5) * dt * 0.6;
         this.wander = clamp(this.wander, -0.35, 0.35);
@@ -663,7 +677,17 @@ export class Car {
 
     // float on the waves / sit on the ground
     const t = performance.now() * 0.001;
-    if (onWater) {
+    if (onWater && sub) {
+      // submarine: ballast towards the target depth, nose follows the dive
+      const surf = 1 - clamp(this.depthT / 1.5, 0, 1);
+      const wave = (Math.sin(t * 1.3 + this.pos.x * 0.15) * 0.1 + Math.sin(t * 0.9 + this.pos.z * 0.11) * 0.08) * surf;
+      const yT = WATER_LEVEL - this.depthT + wave;
+      this.vy += ((yT - this.y) * 3 - this.vy * 2.6) * dt;
+      this.y += this.vy * dt;
+      if (this.y < seabed + 1.8) { this.y = seabed + 1.8; this.vy = Math.max(0, this.vy); }
+      this.pitch = lerp(this.pitch, clamp(this.vy * 0.08, -0.3, 0.3) + Math.sin(t * 1.2) * 0.01 * surf, 1 - Math.exp(-2 * dt));
+      this.roll = lerp(this.roll, steerIn * 0.08 * clamp(this.speed / 15, 0, 1) + Math.sin(t) * 0.02 * surf, 1 - Math.exp(-2 * dt));
+    } else if (onWater) {
       const wave = Math.sin(t * 1.3 + this.pos.x * 0.15) * 0.12 + Math.sin(t * 0.9 + this.pos.z * 0.11) * 0.1;
       const yT = WATER_LEVEL + wave + Math.min(0.35, Math.abs(this.speed) * 0.012);
       this.vy += ((yT - this.y) * 25 - this.vy * 6) * dt;
@@ -680,9 +704,12 @@ export class Car {
     }
     this.airborne = false;
     this.altitude = 0;
+    this.depth = Math.max(0, WATER_LEVEL - this.y);
     if (this.motor) this.motor.rotation.z += this.speed * 3 * dt;
-    this._updateWake(dt, onWater);
+    this._updateWake(dt, onWater && this.depth < 1.2);
+    if (sub) this._updateBubbles(dt);
     this._finishPose(dt, 0, 0);
+    if (sub && this.depth > 2) for (const b of this.beams) b.intensity = 400; // searchlights in the deep
   }
 
   // foam trail behind the boat (additive white discs that spread and fade)
@@ -728,6 +755,75 @@ export class Car {
     });
     this.wake.instanceMatrix.needsUpdate = true;
     this.wake.instanceColor.needsUpdate = true;
+  }
+
+  // ---------------- submarine ----------------
+  _buildSub() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1d2228, roughness: 0.6, metalness: 0.4 });
+    this.cabinMat = new THREE.MeshStandardMaterial({ color: 0x15181d, emissive: 0xffe2a8, emissiveIntensity: 0.4, roughness: 0.2 });
+    // pressure hull: long rounded cigar, waterline at y = 0
+    add(loft([[-8.2, 0.15, -0.2, -0.45], [-7.2, 0.75, 0.45, -1.05], [-5, 1.35, 1.0, -1.6], [3, 1.4, 1.05, -1.65], [5.8, 1.25, 0.95, -1.5], [7.4, 0.8, 0.6, -1.1], [8.2, 0.12, 0.05, -0.55]], -8.2, 8.2, 0.15, 2.05), P);
+    // dark keel band
+    add(loft([[-7.0, 0.95, -0.9, -1.25], [-4, 1.38, -0.8, -1.62], [4, 1.38, -0.8, -1.62], [6.8, 1.0, -0.75, -1.3]], -7.0, 6.8, 0.2, 2.2), dark);
+    // sail (conning tower) with dive planes and periscope
+    add(loft([[0.4, 0.22, 2.9, 0.8], [0.9, 0.48, 3.0, 0.8], [2.6, 0.5, 3.0, 0.8], [3.6, 0.3, 2.8, 0.8], [3.9, 0.12, 2.5, 0.8]], 0.4, 3.9, 0.08, 4), P);
+    this._box(3.0, 0.08, 0.8, P, 0, 2.3, 2.4);
+    this._box(0.08, 1.2, 0.08, M.alu, 0.15, 3.5, 2.6);
+    this._box(0.22, 0.14, 0.3, M.alu, 0.15, 4.1, 2.68);
+    this._box(0.05, 0.7, 0.05, M.alu, -0.18, 3.3, 2.0);
+    // portholes (lit) along both sides
+    for (const sx of [-1, 1]) for (let k = -3; k <= 4; k++) {
+      const pw = new THREE.CylinderGeometry(0.22, 0.22, 0.06, 16); pw.rotateZ(Math.PI / 2);
+      add(pw, this.cabinMat, sx * 1.36, -0.15, k * 1.25, false);
+    }
+    // front viewport
+    add(new THREE.SphereGeometry(0.55, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2), M.glass, 0, -0.25, 7.65, false);
+    // bow planes, cruciform tail, propeller
+    this._box(3.6, 0.08, 0.9, P, 0, -0.3, 5.2);
+    this._box(4.0, 0.1, 1.3, P, 0, -0.25, -7.0);
+    this._box(0.1, 3.4, 1.3, P, 0, -0.25, -7.0);
+    this.motor = new THREE.Group(); this.motor.position.set(0, -0.25, -8.35); this.body.add(this.motor);
+    this.motor.add(new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.6, 12).rotateX(-Math.PI / 2), M.alu));
+    for (let k = 0; k < 5; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9, 0.18), M.alu); b.geometry.translate(0, 0.45, 0); b.rotation.z = (k / 5) * Math.PI * 2; b.rotation.y = 0.3; this.motor.add(b); }
+    // lights
+    const red = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff2020, emissiveIntensity: 2 });
+    this.beacon = this._box(0.14, 0.1, 0.14, red, 0, 3.1, 2.0, false);
+    for (const sx of [-1, 1]) this._box(0.3, 0.2, 0.08, this.headMat, sx * 0.55, -0.6, 7.75, false);
+    this._lights(0.55, -0.6, 7.9, -8.3, 0.0);
+  }
+
+  // rising bubbles from the propeller while submerged
+  _updateBubbles(dt) {
+    if (!this.bubbles) {
+      const N = 120;
+      const m = new THREE.MeshBasicMaterial({ color: 0xcfefff, transparent: true, opacity: 0.55, depthWrite: false });
+      this.bubbles = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), m, N);
+      this.bubbles.frustumCulled = false;
+      this.bubP = Array.from({ length: N }, () => ({ x: 0, y: -999, z: 0, s: 0.1, age: 99 }));
+      this.bubI = 0; this.bubT = 0;
+      this.group.parent.add(this.bubbles);
+    }
+    this.bubbles.visible = true;
+    this.bubT -= dt;
+    const [fx, fz] = this.dir;
+    if (this.depth > 1.5 && this.bubT <= 0) {
+      this.bubT = Math.max(0.02, 0.12 - Math.abs(this.speed) * 0.004);
+      for (let k = 0; k < 2; k++) {
+        const p = this.bubP[this.bubI]; this.bubI = (this.bubI + 1) % this.bubP.length;
+        p.x = this.pos.x - fx * 8.6 + (Math.random() - 0.5) * 0.8; p.z = this.pos.z - fz * 8.6 + (Math.random() - 0.5) * 0.8;
+        p.y = this.y - 0.25 + (Math.random() - 0.5) * 0.8; p.s = 0.06 + Math.random() * 0.14; p.age = 0;
+      }
+    }
+    const m4 = new THREE.Matrix4();
+    this.bubP.forEach((p, i) => {
+      p.age += dt;
+      if (p.age < 6 && p.y < WATER_LEVEL - 0.1) { p.y += (0.8 + p.s * 6) * dt; p.x += Math.sin(p.age * 3 + i) * 0.2 * dt; }
+      const vis = p.age < 6 && p.y < WATER_LEVEL - 0.1 ? p.s * (1 + p.age * 0.15) : 0;
+      m4.makeScale(vis, vis, vis); m4.setPosition(p.x, p.y, p.z);
+      this.bubbles.setMatrixAt(i, m4);
+    });
+    this.bubbles.instanceMatrix.needsUpdate = true;
   }
 
   // ---------------- airliner ----------------
@@ -953,7 +1049,7 @@ export class Car {
     this.onRoad = Math.abs(this.lat) < ROAD_HALF + SHOULDER + 0.3;
     if (this.model === 'plane' || this.model === 'jet') { this._updatePlane(dt, input, auto, loc); return; }
     if (this.model === 'heli') { this._updateHeli(dt, input, auto, loc); return; }
-    if (this.model === 'boat') { this._updateBoat(dt, input, auto, loc); return; }
+    if (this.model === 'boat' || this.model === 'sub') { this._updateBoat(dt, input, auto, loc); return; }
 
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {
@@ -1110,8 +1206,8 @@ export class Car {
 
     // lights
     const n = night;
-    if (this.cabinMat) this.cabinMat.emissiveIntensity = this.model === 'jet' ? 0.15 + n * 2.5 : 0;
-    if (this.beacon && this.model === 'jet') this.beacon.visible = (performance.now() % 1300) < 160;
+    if (this.cabinMat) this.cabinMat.emissiveIntensity = this.model === 'jet' ? 0.15 + n * 2.5 : this.model === 'sub' ? 0.4 + n * 2 + (this.depth > 2 ? 1.5 : 0) : 0;
+    if (this.beacon && (this.model === 'jet' || this.model === 'sub')) this.beacon.visible = (performance.now() % 1300) < 160;
     this.headMat.emissiveIntensity = 0.4 + n * 6;
     for (const b of this.beams) b.intensity = n * 220;
     this.tailMat.emissiveIntensity = (this.braking ? 5 : 0.6) + n * 1.5;
