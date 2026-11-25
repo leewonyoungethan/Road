@@ -132,6 +132,17 @@ form.save button { flex: none; font: 400 17px var(--display); padding: 0 16px; b
 .story-text b { background: linear-gradient(transparent 60%, var(--yellow) 60%); }
 .skip { font: 700 13px var(--body); background: none; border: 0; color: var(--muted); cursor: pointer; text-decoration: underline; }
 .subrow button { font-size: 13px; }
+.bossbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 86px); z-index: 3; pointer-events: none;
+  width: min(320px, calc(100vw - 32px)); padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 4px; font: 700 12px var(--body); }
+.bossbar b { color: #7a3cff; }
+.bossbar i { display: block; height: 12px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; }
+.bossbar em { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #7a3cff, #ff3355); transition: width .3s; }
+.bossintro { position: fixed; left: 0; right: 0; top: 34%; z-index: 4; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding-block: 14px; background: repeating-linear-gradient(-45deg, #1d1a2b 0 18px, #ff3355 18px 36px); border-block: 4px solid var(--ink); animation: bossin .35s cubic-bezier(.3,1.6,.5,1); }
+.bossintro small { font: 400 14px var(--display); color: var(--yellow); letter-spacing: .3em; }
+.bossintro strong { font: 400 clamp(26px, 8vw, 40px) var(--display); color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; background: #1d1a2b; padding: 2px 14px; border-radius: 10px; }
+.bossintro span { font: 900 13px var(--body); color: #fff; background: #1d1a2b; padding: 2px 10px; border-radius: 8px; }
+@keyframes bossin { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 @media (min-aspect-ratio: 21/20) {
   .screen { flex-direction: row; align-items: flex-end; }
   .logo { align-self: flex-start; }
@@ -153,6 +164,8 @@ form.save button { flex: none; font: 400 17px var(--display); padding: 0 16px; b
   <span class="chip pill" id="pw-x2" style="--c:#ffe27a" hidden>특급 우표 ×2 <b></b></span>
 </div>
 <div id="toast"></div>
+<div class="bossbar pill" id="bossbar" hidden><span>도둑 까마귀 <b>까망</b></span><i><em id="bossHp"></em></i></div>
+<div class="bossintro" id="bossIntro" hidden><small>WARNING</small><strong>도둑 까마귀 까망 등장!</strong><span>등불 폭죽을 주워서 맞혀요</span></div>
 <button type="button" id="snd" class="snd pill">♪ 소리 켬</button>
 <div class="pad" id="pad" hidden>
   <button type="button" class="btn" data-a="left" aria-label="왼쪽">◀</button>
@@ -202,6 +215,7 @@ form.save button { flex: none; font: 400 17px var(--display); padding: 0 16px; b
       <b>증기 기관차</b><span>연기 뿜는 기관차는 옆 선로로 피해요</span>
       <b>편지</b><span>한 통에 50점. 많이 모을수록 축제 등불이 많이 켜져요</span>
       <b>아이템</b><span><i style="background:#ff4d5e"></i>회오리 가방(편지 끌어오기) <i style="background:#37e2c8"></i>별빛 망토(부딪혀도 통과) <i style="background:#ffc93c"></i>특급 우표(편지 2배) <i style="background:#ff5d8f"></i>코코아(목숨 +1)</span>
+      <b>보스</b><span>남은 시간 50초쯤 <b>도둑 까마귀 까망</b>이 나타나요. 빨간 원에 떨어지는 먹물 폭탄은 피하거나 점프, 깃털 장벽은 슬라이드! <i style="background:#ff8a3d"></i>등불 폭죽을 주우면 까망에게 발사돼요. 6번 맞히면 +1500점</span>
       <b>속도</b><span>약 58 km/h에서 시작해 3분 동안 130 km/h까지 빨라져요</span>
       <b>점수</b><span>달린 거리 + 편지 점수 + 완주하면 남은 목숨당 500점</span>
     </div>
@@ -304,6 +318,7 @@ const PW = {
   shield: { name: '별빛 망토', dur: 8, color: '#37e2c8' },
   x2: { name: '특급 우표', dur: 12, color: '#ffc93c' },
   heart: { name: '따뜻한 코코아', color: '#ff5d8f' },
+  rocket: { name: '등불 폭죽', color: '#ff8a3d' },
 };
 let charId = CHARS.some(c => c.id === lsGet('rd_char')) ? lsGet('rd_char') : 'mint';
 let mapId = MAPS[lsGet('rd_map')] ? lsGet('rd_map') : 'dusk';
@@ -321,6 +336,7 @@ const perk = (p) => CH().perk === p;
       desert: { root: 146.8, bpm: 108, scale: [0, 1, 4, 5, 7, 8, 10], prog: [0, 1, 0, 6], lead: 'square', seed: 7 },
       snow:   { root: 261.6, bpm: 100, scale: [0, 2, 4, 5, 7, 9, 11], prog: [0, 4, 5, 3], lead: 'triangle', seed: 5 },
       sakura: { root: 196.0, bpm: 106, scale: [0, 2, 4, 5, 7, 9, 11], prog: [0, 3, 4, 0], lead: 'triangle', seed: 9 },
+      boss:   { root: 110.0, bpm: 146, scale: [0, 1, 3, 5, 7, 8, 11], prog: [0, 5, 1, 4], lead: 'sawtooth', seed: 13 },
     };
     let song = null, melody = [], step = 0, nextT = 0, timer = 0, tempoK = 1, playing = false;
     const fq = (semi) => song.root * Math.pow(2, semi / 12);
@@ -377,6 +393,13 @@ const perk = (p) => CH().perk === p;
         case 'ui': tone(880, 0.05, 'square', 0.07, t); break;
         case 'go': [440, 0, 440, 0, 880].forEach((f, i) => f && tone(f, 0.12, 'square', 0.12, t + i * 0.1)); break;
         case 'win': [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, i === 5 ? 0.5 : 0.14, 'square', 0.13, t + i * 0.12)); break;
+        case 'warn': [880, 660, 880, 660].forEach((f, i) => tone(f, 0.14, 'square', 0.1, t + i * 0.16)); break;
+        case 'caw': tone(720, 0.16, 'sawtooth', 0.14, t, 430); tone(680, 0.2, 'sawtooth', 0.14, t + 0.2, 380); break;
+        case 'bomb': tone(1500, 1.1, 'sine', 0.08, t, 260); break;
+        case 'boom': noise(0.5, 0.6, 300, t, null, 0.6, 80); tone(90, 0.4, 'sine', 0.4, t, 40); break;
+        case 'rocket': noise(0.5, 0.3, 700, t, null, 1, 4000); tone(300, 0.5, 'sawtooth', 0.05, t, 1200); break;
+        case 'bosshit': tone(220, 0.3, 'square', 0.18, t, 80); noise(0.3, 0.5, 1400, t, null, 0.8); break;
+        case 'victory': [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i === 4 ? 0.6 : 0.14, 'square', 0.13, t + i * 0.1)); break;
         case 'lose': [392, 330, 262, 196].forEach((f, i) => tone(f, i === 3 ? 0.5 : 0.2, 'triangle', 0.22, t + i * 0.18)); break;
       }
     }
@@ -508,6 +531,9 @@ function iconTex(kind) {
       g.beginPath(); for (let i = 0; i < 28; i++) { const t = i / 28, side = Math.floor(t * 4), f = (t * 4) % 1, r = (i % 2) ? 40 : 46;
         const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]], [x0, y0] = pts[side], [x1, y1] = pts[side + 1]; g.lineTo((x0 + (x1 - x0) * f) * r, (y0 + (y1 - y0) * f) * r * 1.15); }
       g.closePath(); g.fill(); g.fillStyle = '#3a2600'; g.font = '46px "Black Han Sans", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('×2', 0, 4); }
+    else if (kind === 'rocket') { g.rotate(-0.6); g.fillRect(-12, -30, 24, 56); g.beginPath(); g.moveTo(-12, -30); g.lineTo(0, -52); g.lineTo(12, -30); g.fill();
+      g.beginPath(); g.moveTo(-12, 14); g.lineTo(-26, 34); g.lineTo(-12, 26); g.fill(); g.beginPath(); g.moveTo(12, 14); g.lineTo(26, 34); g.lineTo(12, 26); g.fill();
+      g.fillStyle = '#ffe27a'; g.beginPath(); g.moveTo(-8, 28); g.lineTo(0, 50); g.lineTo(8, 28); g.fill(); }
     else { g.fillRect(-30, -14, 50, 44); g.lineWidth = 10; g.beginPath(); g.arc(24, 6, 14, -Math.PI / 2, Math.PI / 2); g.stroke();
       g.lineWidth = 6; for (const x of [-18, -2, 14]) { g.beginPath(); g.moveTo(x, -22); g.quadraticCurveTo(x + 8, -32, x, -44); g.stroke(); } }
   });
@@ -515,7 +541,7 @@ function iconTex(kind) {
 TX.ground = TX.noise.clone(); TX.ground.wrapS = TX.ground.wrapT = THREE.RepeatWrapping; TX.ground.needsUpdate = true;
 TX.gravel.wrapS = TX.gravel.wrapT = THREE.RepeatWrapping;
 TX.trainWin.wrapS = THREE.RepeatWrapping;
-const ICONS = { magnet: iconTex('magnet'), shield: iconTex('shield'), x2: iconTex('x2'), heart: iconTex('heart') };
+const ICONS = { magnet: iconTex('magnet'), shield: iconTex('shield'), x2: iconTex('x2'), heart: iconTex('heart'), rocket: iconTex('rocket') };
 
 // ======================= shared materials / geometries =======================
 const std = (color, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.75, metalness: 0 }, o));
@@ -868,6 +894,9 @@ function makeItem(it) {
 function clearObjects() {
   for (const k of ['obs', 'coins', 'items']) for (const o of live[k]) scene.remove(o.mesh);
   live.obs = []; live.coins = []; live.items = [];
+  if (st && st.rockets) { for (const r of st.rockets) scene.remove(r.m); st.rockets = []; }
+  if (bossObj) scene.remove(bossObj.g);
+  $('bossbar').hidden = true;
 }
 
 // ======================= particles / weather / speed lines =======================
@@ -941,17 +970,155 @@ function updateLines(dt, v) {
   }
 }
 
+// ======================= boss: 도둑 까마귀 까망 =======================
+const BOSS_T = 130, BOSS_HP = 6;
+let bossObj = null;
+function buildBoss() {
+  const g = new THREE.Group();
+  const black = std('#221c3a', { roughness: 0.4, metalness: 0.25, emissive: '#3a2070', emissiveIntensity: 0.35 });
+  const wingM = std('#2c2450', { roughness: 0.5, metalness: 0.2, emissive: '#3a2070', emissiveIntensity: 0.3, side: THREE.DoubleSide });
+  const add = (geo, mat, sx, sy, sz, x, y, z, parent = g) => { const m = new THREE.Mesh(geo, mat); m.scale.set(sx, sy, sz); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; };
+  add(GEO.sphere, black, 1.3, 1.1, 1.7, 0, 0, 0);
+  add(GEO.sphere, black, 0.85, 0.85, 0.85, 0, 0.95, 1.35);
+  const beak = add(new THREE.ConeGeometry(0.3, 1.0, 6), std('#ffb31a', { roughness: 0.35 }), 1, 1, 1, 0, 0.75, 2.35); beak.rotation.x = Math.PI / 2;
+  add(GEO.box, std('#e0384f', { roughness: 0.5 }), 1.55, 0.3, 0.6, 0, 1.08, 1.75);
+  const eyeM = new THREE.MeshBasicMaterial({ color: '#ffe14a' });
+  for (const sx of [-1, 1]) {
+    add(GEO.sphere, eyeM, 0.14, 0.14, 0.08, sx * 0.34, 1.1, 2.07);
+    const gl = glowSprite('#ffd23f', 1.1, 0.8); gl.position.set(sx * 0.34, 1.1, 2.15); g.add(gl);
+  }
+  const wings = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group(); pivot.position.set(sx * 1.0, 0.45, 0); g.add(pivot);
+    add(GEO.box, wingM, 2.6, 0.14, 1.5, sx * 1.35, 0, 0, pivot);
+    for (let i = 0; i < 4; i++) { const f = add(GEO.box, wingM, 0.5, 0.1, 1.9 - i * 0.15, sx * (2.4 + i * 0.32), -0.02, -0.25 - i * 0.12, pivot); f.rotation.y = sx * (0.15 + i * 0.12); }
+    wings.push(pivot);
+  }
+  for (let i = -1; i <= 1; i++) { const t = add(GEO.box, wingM, 0.45, 0.1, 1.5, i * 0.4, 0.1, -2.1); t.rotation.y = i * 0.35; }
+  const sack = add(GEO.sphere, std('#a8743f', { roughness: 0.9 }), 0.75, 0.8, 0.7, 0, -1.4, 0.4);
+  for (let i = 0; i < 4; i++) { const e = add(GEO.env, MAT.env, 1, 1, 1, (i - 1.5) * 0.28, -0.75, 0.4 + (i % 2) * 0.15); e.rotation.set(0.3, 0, (i - 1.5) * 0.4); }
+  for (const sx of [-1, 1]) add(new THREE.ConeGeometry(0.08, 0.5, 5), std('#ffb31a'), 1, 1, 1, sx * 0.3, -1.0, 0.2);
+  g.scale.setScalar(1.45);
+  bossObj = { g, wings, black, wingM };
+}
+function bossWorld() { const B = st.boss; return new THREE.Vector3(B.x, B.y, -(st.dist + B.ahead)); }
+function startBoss() {
+  if (!bossObj) buildBoss();
+  st.boss = { phase: 'intro', hp: BOSS_HP, t: 0, nextAtk: 1.2, nextRocket: 0.6, x: 0, tx: 0, y: 7, ahead: 95, flash: 0 };
+  scene.add(bossObj.g); bossObj.g.visible = true;
+  Sound.sfx('warn'); Sound.sfx('caw'); Sound.startMusic('boss');
+  const b = $('bossIntro'); b.hidden = false; setTimeout(() => { b.hidden = true; }, 2400);
+}
+function bossAttack() {
+  const B = st.boss, v = speed();
+  if (Math.random() < 0.6) {
+    const lane = Math.random() < 0.75 ? st.lane : Math.floor(Math.random() * 3), dur = 1.3;
+    const o = { lane, type: 'ink', z: st.dist + v * dur, len: 1.4, falling: true, ft: 0, dur };
+    const grp = new THREE.Group(); grp.position.set(laneX(lane), 0, -o.z);
+    const ball = new THREE.Mesh(GEO.sphere, std('#1a1428', { emissive: '#7a3cff', emissiveIntensity: 0.5, roughness: 0.3 })); ball.scale.setScalar(0.45); ball.castShadow = true; grp.add(ball);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ff3355', transparent: true, opacity: 0.85, depthWrite: false })); ring.position.y = 0.3; grp.add(ring);
+    const splat = new THREE.Mesh(new THREE.CircleGeometry(1.05, 20).rotateX(-Math.PI / 2), std('#2a1840', { roughness: 0.15, metalness: 0.3, emissive: '#5a2aa0', emissiveIntensity: 0.4 })); splat.position.y = 0.32; splat.visible = false; grp.add(splat);
+    const bw = bossWorld(); o.from = new THREE.Vector3(bw.x - laneX(lane), bw.y - 0.8, bw.z + o.z);
+    grp.userData = { ball, ring, splat }; scene.add(grp); o.mesh = grp; live.obs.push(o);
+    B.tx = laneX(lane); Sound.sfx('bomb');
+  } else {
+    const free = Math.floor(Math.random() * 3), z = st.dist + v * 1.6;
+    for (let l = 0; l < 3; l++) {
+      if (l === free || (Math.random() < 0.35 && l !== st.lane)) continue;
+      const o = { lane: l, type: 'feather', z, len: 0.5 };
+      const grp = new THREE.Group(); grp.position.set(laneX(l), 0, -z);
+      for (let i = 0; i < 7; i++) { const f = mesh(new THREE.ConeGeometry(0.16, 1.1, 4), bossObj.wingM, 1, 1, 1, -0.9 + i * 0.3, 1.75 + (i % 2) * 0.15, 0); f.rotation.z = Math.PI + (i - 3) * 0.08; grp.add(f); }
+      grp.add(mesh(GEO.box, std('#ff3355', { emissive: '#ff3355', emissiveIntensity: 0.6 }), 1.95, 0.08, 0.08, 0, 2.3, 0, false));
+      const gl = glowSprite('#b07bff', 2.4, 0.6); gl.position.set(0, 1.9, 0); grp.add(gl);
+      scene.add(grp); o.mesh = grp; live.obs.push(o);
+    }
+    B.tx = laneX(free); Sound.sfx('caw');
+  }
+}
+function fireRocket() {
+  if (!st.boss || st.boss.phase !== 'fight') { st.coinPts += 200; toast('등불 폭죽! +200'); return; }
+  Sound.sfx('rocket');
+  const r = new THREE.Group();
+  r.add(mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.6, 10).rotateX(Math.PI / 2), std('#ff8a3d', { emissive: '#ff5a1a', emissiveIntensity: 0.6 }), 1, 1, 1, 0, 0, 0, false));
+  const tip = mesh(new THREE.ConeGeometry(0.13, 0.3, 10).rotateX(-Math.PI / 2), MAT.white, 1, 1, 1, 0, 0, -0.42, false); r.add(tip);
+  r.add(glowSprite('#ffb347', 1.6, 0.9));
+  r.position.set(st.px, 1.4 + st.jy, -st.dist); scene.add(r);
+  (st.rockets || (st.rockets = [])).push({ m: r, t: 0, from: r.position.clone() });
+}
+function defeatBoss() {
+  const B = st.boss; B.phase = 'down'; B.t = 0;
+  st.bossPts = 1500;
+  toast('까망을 물리쳤다! +1500'); Sound.sfx('victory'); Sound.startMusic(mapId);
+  const bw = bossWorld();
+  for (const c of ['#ffd166', '#ff7aa2', '#6fd6ff', '#fff6e0', '#2c2450']) burst(bw.x, bw.y, bw.z, c, 50, 10, 2, 6, 1.0);
+  for (let i = 0; i < 24; i++) { const lane = i % 3, c = { lane, x: laneX(lane), z: st.dist + 18 + Math.floor(i / 3) * 4, ph: i }; c.mesh = makeCoin(c); live.coins.push(c); }
+  $('bossbar').hidden = true;
+}
+function updateBoss(dt) {
+  const B = st.boss; B.t += dt; B.flash = Math.max(0, B.flash - dt);
+  if (B.phase === 'intro') { B.ahead += (19 - B.ahead) * Math.min(1, dt * 1.4); B.y += (4.8 - B.y) * Math.min(1, dt * 2); if (B.t > 2.6) B.phase = 'fight'; }
+  else if (B.phase === 'fight') {
+    B.nextAtk -= dt; B.nextRocket -= dt;
+    if (B.nextAtk <= 0) { bossAttack(); B.nextAtk = 1.6 + Math.random() * 0.9; }
+    if (B.nextRocket <= 0) {
+      const lane = Math.floor(Math.random() * 3), it = { lane, x: laneX(lane), z: st.dist + 42, kind: 'rocket' };
+      it.mesh = makeItem(it); live.items.push(it); B.nextRocket = 3.0 + Math.random() * 1.2;
+    }
+    B.y = 4.8 + Math.sin(B.t * 2.2) * 0.35;
+  } else if (B.phase === 'down') {
+    B.ahead += dt * 30; B.y += dt * 7;
+    if (B.t > 2.5) { B.phase = 'gone'; scene.remove(bossObj.g); }
+  }
+  B.x += (B.tx - B.x) * Math.min(1, dt * 2.5);
+  // falling ink bombs
+  for (const o of live.obs) {
+    if (!o.falling) continue;
+    o.ft += dt; const k = Math.min(1, o.ft / o.dur), u = o.mesh.userData;
+    u.ball.position.set(o.from.x * (1 - k), o.from.y * (1 - k) * (1 - k) + 0.4 + Math.sin(k * Math.PI) * 1.5, o.from.z * (1 - k));
+    u.ring.scale.setScalar(1.3 - k * 0.3); u.ring.material.opacity = 0.5 + 0.4 * Math.sin(o.ft * 20);
+    if (k >= 1) {
+      o.falling = false; u.ball.visible = false; u.ring.visible = false; u.splat.visible = true;
+      burst(laneX(o.lane), 0.5, -o.z, '#5a2aa0', 26, 5, 3); Sound.sfx('boom'); st.shake = Math.max(st.shake, 0.3);
+    }
+  }
+  // rockets
+  if (st.rockets) for (let i = st.rockets.length - 1; i >= 0; i--) {
+    const r = st.rockets[i]; r.t += dt;
+    const k = Math.min(1, r.t / 0.6), to = bossWorld();
+    r.m.position.lerpVectors(r.from, to, k); r.m.position.y += Math.sin(k * Math.PI) * 2; r.m.lookAt(to);
+    burst(r.m.position.x, r.m.position.y, r.m.position.z, Math.random() < 0.5 ? '#ffb347' : '#ffe27a', 2, 1, 0, 3, 0.3);
+    if (k >= 1) {
+      scene.remove(r.m); st.rockets.splice(i, 1);
+      if (B.phase !== 'fight') continue;
+      B.hp--; B.flash = 0.3; Sound.sfx('bosshit');
+      for (const c of ['#ffd166', '#ff7aa2', '#6fd6ff']) burst(to.x, to.y, to.z, c, 22, 8, 1, 6, 0.8);
+      if (B.hp <= 0) defeatBoss(); else toast(`명중! 까망 체력 ${B.hp}/${BOSS_HP}`);
+    }
+  }
+}
+function renderBoss(t) {
+  if (!bossObj || !st || !st.boss || st.boss.phase === 'gone') { if (bossObj) bossObj.g.visible = false; return; }
+  const B = st.boss, g = bossObj.g;
+  g.visible = running;
+  g.position.set(B.x, B.y, -(st.dist + B.ahead));
+  g.rotation.set(Math.sin(t * 2) * 0.08 + (B.phase === 'down' ? -0.6 : 0), (B.tx - B.x) * -0.15, (B.tx - B.x) * 0.12);
+  bossObj.wings.forEach((w, i) => { w.rotation.z = (i ? -1 : 1) * Math.sin(t * 9) * 0.55; });
+  const f = B.flash > 0 ? 3 : 0.35;
+  bossObj.black.emissive.set(B.flash > 0 ? '#ffffff' : '#3a2070'); bossObj.black.emissiveIntensity = f;
+}
+
 // ======================= game state =======================
 let st = null, running = false, idleDist = 0, endFreeze = 0;
 const baseSpeed = () => 16 + st.t * 0.08 + st.t * st.t * 0.0002;
 const speed = () => baseSpeed() * (1 - st.slow * 0.25);
-const score = () => Math.floor((st.dist + st.coinPts) * (perk('score') ? 1.1 : 1));
+const score = () => Math.floor((st.dist - st.startDist + st.coinPts + st.bossPts) * (perk('score') ? 1.1 : 1));
 function newGame() {
   clearObjects();
   st = { t: 0, dist: idleDist, coins: 0, hearts: 3, lane: 1, px: 0, jy: 0, vy: 0, slide: 0, inv: 0, slow: 0, shake: 0,
-    nextZ: idleDist + 75, lv: 0, wasAir: false, pw: { magnet: 0, shield: 0, x2: 0 }, pwMax: { magnet: 1, shield: 1, x2: 1 }, coinPts: 0, startDist: idleDist };
+    nextZ: idleDist + 75, lv: 0, wasAir: false, pw: { magnet: 0, shield: 0, x2: 0 }, pwMax: { magnet: 1, shield: 1, x2: 1 }, coinPts: 0, startDist: idleDist, bossPts: 0, boss: null, rockets: [] };
 }
 function powerUp(k) {
+  if (k === 'rocket') { fireRocket(); return; }
   Sound.sfx(k === 'heart' ? 'heart' : 'power');
   if (k === 'heart') { st.hearts = Math.min(3, st.hearts + 1); toast('목숨 +1!'); }
   else { const d = Math.round(PW[k].dur * (perk('items') ? 1.4 : 1)); st.pw[k] = d; st.pwMax[k] = d; toast(`${PW[k].name}! ${d}초`); }
@@ -964,8 +1131,9 @@ function act(a) {
   else if (a === 'jump') { if (st.jy <= 0.01) { st.vy = perk('jump') ? 9.6 : 8; st.slide = 0; Sound.sfx('jump'); } }
   else if (a === 'slide') { Sound.sfx('slide'); st.slide = 0.75; if (st.jy > 0.01) st.vy = -14; }
 }
-function spawnRow(z) {
+function spawnRow(z, calm) {
   const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
+  if (calm) { if (Math.random() < 0.7) for (let i = 0; i < 5; i++) { const c = { lane: lanes[0], x: laneX(lanes[0]), z: z + i * 3, ph: i }; c.mesh = makeCoin(c); live.coins.push(c); } return 0; }
   const nBlock = st.t < 25 ? 1 : (Math.random() < 0.45 ? 2 : 1);
   let len = 0, trainUsed = false;
   for (let i = 0; i < nBlock; i++) {
@@ -1013,17 +1181,19 @@ function update(dt) {
   if (st.slide > 0 && !air && Math.random() < 0.6) burst(st.px, 0.3, -st.dist + 0.3, '#d8cfe0', 1, 1.5, 1);
 
   while (st.nextZ < st.dist + 125) {
-    const len = spawnRow(st.nextZ);
+    const len = spawnRow(st.nextZ, st.t >= BOSS_T - 7 && !(st.boss && st.boss.phase === 'gone'));
     const gapTime = Math.max(1.2, 2.4 - st.t * 0.0068);
     st.nextZ += len + Math.max(14, speed() * gapTime);
   }
 
+  if (!st.boss && st.t >= BOSS_T) startBoss();
+  if (st.boss) updateBoss(dt);
   const pl = Math.round(st.px / LANE) + 1;
   for (const o of live.obs) {
-    if (o.hit || o.lane !== pl) continue;
+    if (o.hit || o.falling || o.lane !== pl) continue;
     const a = o.z - st.dist, b = a + o.len;
     if (a > 0.45 || b < -0.45) continue;
-    if ((o.type === 'low' && st.jy > 0.55) || (o.type === 'high' && st.slide > 0)) continue;
+    if (((o.type === 'low' || o.type === 'ink') && st.jy > 0.5) || ((o.type === 'high' || o.type === 'feather') && st.slide > 0)) continue;
     if (st.pw.shield > 0) {
       o.hit = true; o.fly = { vx: (Math.random() - .5) * 6, vy: 7 + Math.random() * 3, vz: -8, r: (Math.random() - .5) * 10, t: 0 };
       st.shake = 0.35; Sound.sfx('smash');
@@ -1045,7 +1215,7 @@ function update(dt) {
       o.mesh.rotation.x += f.r * dt; o.mesh.rotation.z += f.r * 0.6 * dt;
       if (f.t > 1.6) { scene.remove(o.mesh); live.obs.splice(i, 1); continue; }
     }
-    if (o.z + o.len - st.dist < -14) { scene.remove(o.mesh); live.obs.splice(i, 1); }
+    if (o.z + o.len - st.dist < -14 && !o.falling) { scene.remove(o.mesh); live.obs.splice(i, 1); }
   }
   for (let i = live.coins.length - 1; i >= 0; i--) {
     const c = live.coins[i], rel = c.z - st.dist;
@@ -1165,6 +1335,7 @@ function frame(now) {
     const sk = o.mesh.userData.stack;
     if (sk && !o.fly && Math.random() < dt * 9) { const rel = o.z - dist; if (rel > -5 && rel < 70) burst(o.mesh.position.x + (Math.random() - .5) * 0.2, sk.y, o.mesh.position.z + sk.z, Math.random() < 0.5 ? '#e8e4ee' : '#bdb8c8', 2, 0.6, 2.5, -0.8, 1.0); }
   }
+  renderBoss(t);
   updateParts(dt);
   updateWeather(dt, camera.position.z);
   updateLines(dt, running ? v : 0);
@@ -1175,6 +1346,8 @@ function frame(now) {
 // ======================= HUD / flow =======================
 function hud() {
   $('score').textContent = score().toLocaleString();
+  const B = st.boss, showB = !!B && (B.phase === 'intro' || B.phase === 'fight');
+  $('bossbar').hidden = !showB; if (showB) $('bossHp').style.width = `${(B.hp / BOSS_HP) * 100}%`;
   $('spd').textContent = `편지 ${st.coins}통 · ${Math.round(speed() * 3.6)} km/h`;
   const left = Math.max(0, DURATION - st.t);
   $('time').textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
@@ -1215,8 +1388,10 @@ function endGame(reason) {
   $('endReason').textContent = reason === 'finish' ? `축제 광장 도착! 편지 ${st.coins}통으로 등불 ${st.coins}개가 켜졌어요` : `${Math.floor(st.t)}초 만에 지쳐 쓰러졌어요 · 편지 ${st.coins}통은 지켜냈어요`;
   if (reason === 'finish') fireworks();
   $('finalScore').textContent = lastResult.score.toLocaleString();
+  $('bossbar').hidden = true; $('bossIntro').hidden = true;
   const rows = [['달린 거리', `${Math.floor(st.dist - st.startDist).toLocaleString()} m`], [`모은 편지 ${st.coins}통`, `${st.coinPts.toLocaleString()}`]];
   if (perk('score')) rows.push(['민트 보너스', '+10%']);
+  if (st.boss) rows.push(st.bossPts ? ['도둑 까마귀 격파', '+1,500'] : ['도둑 까마귀', '도망쳤어요']);
   if (reason === 'finish') rows.push([`완주 보너스 (♥${st.hearts})`, `${bonus.toLocaleString()}`]);
   $('breakdown').innerHTML = '';
   for (const [a, b] of rows) { const x = document.createElement('span'); x.textContent = a; const y = document.createElement('span'); y.textContent = b; $('breakdown').append(x, y); }
@@ -1231,12 +1406,14 @@ const STORY = [
   { t: '앗, 편지가 쏟아졌다!', x: (n) => `축제 초대장을 싣고 가던 <b>우편 증기 기관차</b>의 화물칸 문이 덜컹 열렸어요. 편지가 선로 위로 우수수 흩어졌어요!`, art: 'train' },
   { t: '남은 시간은 3분', x: (n) => `축제가 시작되기까지 <b>단 3분</b>. 막내 배달부 <b>${n}</b>, 선로를 달려 편지를 모아 줘!`, art: 'clock' },
   { t: '이렇게 달려요', x: (n) => `<b>소포 상자</b>는 점프, <b>축제 현수막</b>은 슬라이드, <b>증기 기관차</b>는 옆 선로로! 모은 편지 수만큼 등불이 켜져요.`, art: 'how' },
+  { t: '조심해, 도둑 까마귀!', x: (n) => `편지를 노리는 <b>도둑 까마귀 까망</b>이 마지막에 나타나요. 선로 위 <b>등불 폭죽</b>을 주워 까망에게 맞히고 편지를 되찾아요!`, art: 'crow' },
 ];
 const ART = {
   lanterns: `<svg viewBox="0 0 300 150"><rect width="300" height="150" fill="#1e1450"/><rect y="105" width="300" height="45" fill="#2c1c46"/><path d="M0 105 L40 80 L60 95 L95 70 L130 98 L170 75 L210 96 L250 72 L300 100 V105 H0Z" fill="#3a2458"/><path d="M10 30 Q150 70 290 30" stroke="#ffe9b0" stroke-width="2" fill="none"/>${[40, 85, 130, 175, 220, 262].map((x, i) => `<g><line x1="${x}" y1="${30 + Math.sin(i) * 8 + 10}" x2="${x}" y2="${50 + Math.sin(i) * 8}" stroke="#ffe9b0"/><ellipse cx="${x}" cy="${62 + Math.sin(i) * 8}" rx="11" ry="14" fill="${['#ffb347', '#ff7aa2', '#ffd166'][i % 3]}"/><circle cx="${x}" cy="${62 + Math.sin(i) * 8}" r="22" fill="#ffd166" opacity=".18"/></g>`).join('')}<circle cx="250" cy="22" r="10" fill="#fff6d6"/></svg>`,
   train: `<svg viewBox="0 0 300 150"><rect width="300" height="150" fill="#ffad7a"/><rect y="112" width="300" height="38" fill="#5a4060"/><rect y="116" width="300" height="4" fill="#d8d0ea"/><rect x="20" y="70" width="90" height="40" rx="18" fill="#3a8cff" stroke="#1d1a2b" stroke-width="4"/><rect x="95" y="55" width="40" height="55" fill="#3a8cff" stroke="#1d1a2b" stroke-width="4"/><rect x="40" y="45" width="14" height="26" fill="#2c2a36"/><circle cx="47" cy="34" r="9" fill="#e8e4ee"/><circle cx="36" cy="20" r="11" fill="#e8e4ee"/><rect x="145" y="62" width="70" height="48" fill="#7a4a2e" stroke="#1d1a2b" stroke-width="4"/><rect x="170" y="70" width="22" height="40" fill="#1d1a2b"/>${[[205, 60, -20], [228, 40, 15], [250, 70, -35], [270, 35, 25], [238, 88, 10], [282, 62, -10]].map(([x, y, r]) => `<g transform="translate(${x} ${y}) rotate(${r})"><rect x="-12" y="-8" width="24" height="16" fill="#fff6e0" stroke="#1d1a2b" stroke-width="2"/><path d="M-12 -8 L0 2 L12 -8" fill="none" stroke="#1d1a2b" stroke-width="2"/><circle r="3" cy="0" fill="#e0384f"/></g>`).join('')}<circle cx="45" cy="112" r="9" fill="#1d1a2b"/><circle cx="85" cy="112" r="9" fill="#1d1a2b"/><circle cx="160" cy="112" r="8" fill="#1d1a2b"/><circle cx="200" cy="112" r="8" fill="#1d1a2b"/></svg>`,
   clock: `<svg viewBox="0 0 300 150"><rect width="300" height="150" fill="#ffd23f"/><circle cx="110" cy="75" r="52" fill="#fffaf0" stroke="#1d1a2b" stroke-width="6"/><line x1="110" y1="75" x2="110" y2="38" stroke="#1d1a2b" stroke-width="6" stroke-linecap="round"/><line x1="110" y1="75" x2="136" y2="75" stroke="#ff5c8a" stroke-width="6" stroke-linecap="round"/><text x="235" y="92" font-family="Black Han Sans, sans-serif" font-size="46" text-anchor="middle" fill="#1d1a2b">3:00</text><rect x="200" y="104" width="70" height="10" rx="5" fill="#1d1a2b"/><rect x="200" y="104" width="70" height="10" rx="5" fill="#ff5c8a" transform="scale(1 1)"/></svg>`,
   how: `<svg viewBox="0 0 300 150"><rect width="300" height="150" fill="#aee0ff"/><rect y="110" width="300" height="40" fill="#94c973"/><g transform="translate(25 0)"><rect x="0" y="82" width="34" height="28" fill="#c9925a" stroke="#1d1a2b" stroke-width="3"/><rect x="22" y="88" width="30" height="22" fill="#a8743f" stroke="#1d1a2b" stroke-width="3"/><rect x="8" y="62" width="26" height="20" fill="#c9925a" stroke="#1d1a2b" stroke-width="3"/><path d="M26 50 L26 22 M16 32 L26 22 L36 32" stroke="#1d1a2b" stroke-width="5" fill="none" stroke-linecap="round"/></g><g transform="translate(115 0)"><line x1="4" y1="40" x2="4" y2="110" stroke="#7a4a2e" stroke-width="5"/><line x1="66" y1="40" x2="66" y2="110" stroke="#7a4a2e" stroke-width="5"/><rect x="4" y="40" width="62" height="24" fill="#ff7aa2" stroke="#1d1a2b" stroke-width="3"/><path d="M35 78 L35 104 M25 94 L35 104 L45 94" stroke="#1d1a2b" stroke-width="5" fill="none" stroke-linecap="round"/></g><g transform="translate(205 0)"><rect x="4" y="66" width="56" height="40" rx="14" fill="#2ec4a8" stroke="#1d1a2b" stroke-width="3"/><rect x="14" y="48" width="12" height="20" fill="#2c2a36"/><circle cx="20" cy="40" r="7" fill="#e8e4ee"/><path d="M76 86 L96 86 M88 78 L96 86 L88 94" stroke="#1d1a2b" stroke-width="5" fill="none" stroke-linecap="round"/></g></svg>`,
+  crow: `<svg viewBox="0 0 300 150"><rect width="300" height="150" fill="#2a1d5e"/><circle cx="250" cy="30" r="14" fill="#fff6d6"/><path d="M150 70 L60 40 L85 62 L40 58 L80 80 L150 86Z M150 70 L240 40 L215 62 L260 58 L220 80 L150 86Z" fill="#3a3060" stroke="#1d1a2b" stroke-width="3"/><ellipse cx="150" cy="80" rx="34" ry="28" fill="#2c2450" stroke="#1d1a2b" stroke-width="3"/><circle cx="150" cy="52" r="20" fill="#2c2450" stroke="#1d1a2b" stroke-width="3"/><rect x="128" y="44" width="44" height="12" rx="4" fill="#e0384f"/><circle cx="141" cy="50" r="4" fill="#ffe14a"/><circle cx="159" cy="50" r="4" fill="#ffe14a"/><path d="M144 58 L150 72 L156 58Z" fill="#ffb31a" stroke="#1d1a2b" stroke-width="2"/><ellipse cx="150" cy="116" rx="20" ry="16" fill="#a8743f" stroke="#1d1a2b" stroke-width="3"/><rect x="138" y="98" width="14" height="10" fill="#fff6e0" stroke="#1d1a2b" stroke-width="2" transform="rotate(-15 145 103)"/><g transform="translate(40 120) rotate(-35)"><rect x="-5" y="-14" width="10" height="24" fill="#ff8a3d" stroke="#1d1a2b" stroke-width="2"/><path d="M-5 -14 L0 -24 L5 -14Z" fill="#fff"/><path d="M-3 10 L0 20 L3 10Z" fill="#ffe27a"/></g><path d="M52 104 Q100 70 128 84" stroke="#ffe27a" stroke-width="3" stroke-dasharray="6 6" fill="none"/></svg>`,
 };
 let storyIdx = 0, storyThenStart = false;
 function showStory(i) {
@@ -1249,13 +1426,13 @@ function showStory(i) {
 }
 function openStory(thenStart) { storyThenStart = thenStart; showStory(0); $('storyModal').hidden = false; }
 function closeStory() {
-  $('storyModal').hidden = true; lsSet('lr_story', '1');
+  $('storyModal').hidden = true; lsSet('lr_story2', '1');
   if (storyThenStart) start();
 }
 $('storyNext').addEventListener('click', () => { Sound.init(); Sound.sfx('ui'); if (storyIdx < STORY.length - 1) showStory(storyIdx + 1); else closeStory(); });
 $('storySkip').addEventListener('click', () => { Sound.sfx('ui'); closeStory(); });
 $('storyBtn').addEventListener('click', () => { Sound.init(); Sound.sfx('ui'); openStory(false); });
-$('startBtn').addEventListener('click', () => { Sound.init(); if (!lsGet('lr_story')) openStory(true); else start(); });
+$('startBtn').addEventListener('click', () => { Sound.init(); if (!lsGet('lr_story2')) openStory(true); else start(); });
 $('againBtn').addEventListener('click', start);
 $('homeBtn').addEventListener('click', () => { Sound.sfx('ui'); $('result').hidden = true; showTitle(true); });
 $('rankBtn').addEventListener('click', () => { Sound.init(); Sound.sfx('ui'); renderBoards(); $('rankModal').hidden = false; });
