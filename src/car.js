@@ -15,14 +15,15 @@ const FLIGHT = {
 };
 
 export const CAR_COLORS = [0xc4121e, 0x1a5fd0, 0xeceae4, 0x1a1b1e, 0x1f7a52, 0xf2a81a, 0x8a8f96, 0x6a2bd1];
-export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'boat', 'sub', 'plane', 'jet', 'heli'];
-export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터', boat: '배', sub: '잠수함' };
+export const CAR_MODELS = ['sports', 'suv', 'truck', 'bike', 'boat', 'sub', 'plane', 'jet', 'heli', 'rocket'];
+export const CAR_MODEL_NAMES = { sports: '스포츠카', suv: 'SUV', truck: '트럭', bike: '오토바이', plane: '비행기', jet: '여객기', heli: '헬리콥터', boat: '배', sub: '잠수함', rocket: '로켓' };
 
 const MODEL_DIMS = {
   sports: { wb: 2.62, track: 1.62, wr: 0.35, tyreW: 0.27, camDist: 7.4, camH: 2.3, hood: [0, 1.12, 0.15] },
   suv: { wb: 2.86, track: 1.72, wr: 0.41, tyreW: 0.3, camDist: 8.4, camH: 2.8, hood: [0, 1.6, 0.4] },
   truck: { wb: 3.4, track: 1.78, wr: 0.45, tyreW: 0.34, camDist: 9.6, camH: 3.1, hood: [0, 1.85, 0.9] },
   heli: { wb: 2.0, track: 2.0, wr: 0.3, tyreW: 0.1, camDist: 15, camH: 5, hood: [0, 1.95, 1.35] },
+  rocket: { wb: 2, track: 2, wr: 0.3, tyreW: 0.1, camDist: 48, camH: 12, hood: [0, 1.2, 23] },
   sub: { wb: 8, track: 2.6, wr: 0.3, tyreW: 0.1, camDist: 26, camH: 6, hood: [0, 3.6, 2.6] },
   boat: { wb: 5.0, track: 2.6, wr: 0.3, tyreW: 0.1, camDist: 19, camH: 6, hood: [0, 1.7, 0.3], scale: 1.75 },
   jet: { wb: 14, track: 7, wr: 0.6, tyreW: 0.4, camDist: 62, camH: 15, hood: [0, 5.3, 16.6] },
@@ -139,13 +140,17 @@ export class Car {
     else if (name === 'jet') this._buildJet();
     else if (name === 'boat') this._buildBoat();
     else if (name === 'sub') this._buildSub();
+    else if (name === 'rocket') this._buildRocket();
     else if (name === 'heli') this._buildHeli();
     else this._buildBike();
     this.flying = false; this.rail = false; this.flightPitch = 0; this.altitude = 0; this.aglTarget = 0; this.vy = 0; this.rotorRate = 0; this.heliV = 0;
-    if (name !== 'jet' && name !== 'sub') this.cabinMat = null;
+    if (name !== 'jet' && name !== 'sub' && name !== 'rocket') this.cabinMat = null;
     if (this.wake) this.wake.visible = name === 'boat' || name === 'sub';
     if (this.bubbles) this.bubbles.visible = name === 'sub';
     this.depthT = 0; this.depth = 0;
+    if (this.smoke) this.smoke.visible = name === 'rocket';
+    this.rk = { phase: 'pad', t: 0 };
+    if (name === 'rocket') { this.pitch = Math.PI / 2; this.flightPitch = Math.PI / 2; this.speed = 0; }
     this.lean = 0;
   }
 
@@ -826,6 +831,155 @@ export class Car {
     this.bubbles.instanceMatrix.needsUpdate = true;
   }
 
+  // ---------------- rocket ----------------
+  // modelled lying along +z with the base at the origin; flying pitch PI/2 = standing upright
+  _buildRocket() {
+    const M = this.mats, P = this.paint, add = this._add.bind(this);
+    const white = new THREE.MeshStandardMaterial({ color: 0xf3f3f0, roughness: 0.35, metalness: 0.2 });
+    const along = (g) => g.rotateX(Math.PI / 2);
+    add(along(new THREE.CylinderGeometry(1.6, 1.7, 15, 28)).translate(0, 0, 9.5), white);          // first stage
+    add(along(new THREE.CylinderGeometry(1.7, 1.7, 0.6, 28)).translate(0, 0, 2.3), M.black);        // interstage band
+    add(along(new THREE.CylinderGeometry(1.4, 1.6, 0.8, 28)).translate(0, 0, 17.4), M.black);
+    add(along(new THREE.CylinderGeometry(1.4, 1.4, 5, 28)).translate(0, 0, 20.3), white);           // second stage
+    add(along(new THREE.CylinderGeometry(0.02, 1.4, 5.5, 28)).translate(0, 0, 25.55), P);           // nose cone
+    add(along(new THREE.CylinderGeometry(1.62, 1.62, 1.6, 28)).translate(0, 0, 13), P);             // stripe
+    add(along(new THREE.CylinderGeometry(1.42, 1.42, 0.5, 28)).translate(0, 0, 21.6), P);
+    // windows on the capsule
+    this.cabinMat = new THREE.MeshStandardMaterial({ color: 0x15181d, emissive: 0xffe2a8, emissiveIntensity: 0.4, roughness: 0.2 });
+    for (let k = 0; k < 3; k++) { const a = Math.PI / 2 + (k - 1) * 0.5; add(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 14).rotateZ(a - Math.PI / 2), this.cabinMat, Math.cos(a) * 1.41, Math.sin(a) * 1.41, 21, false); }
+    // fins
+    for (let k = 0; k < 4; k++) {
+      const fin = new THREE.BoxGeometry(0.18, 2.6, 3.4, 1, 4, 1);
+      const p = fin.attributes.position;
+      for (let i = 0; i < p.count; i++) { const t = (p.getY(i) + 1.3) / 2.6; p.setZ(i, p.getZ(i) * (1 - 0.55 * t) - 0.8 * t); }
+      fin.computeVertexNormals(); fin.translate(0, 2.9, 2.0);
+      const m = add(fin, P); m.rotation.z = (k / 4) * Math.PI * 2 + Math.PI / 4;
+    }
+    // engine bells
+    for (const [x, y] of [[0, 0], [0.75, 0.75], [-0.75, 0.75], [0.75, -0.75], [-0.75, -0.75]]) {
+      add(along(new THREE.CylinderGeometry(0.28, 0.5, 1.1, 16, 1, true)).translate(x, y, 0.05), M.alu, 0, 0, 0, false);
+    }
+    // exhaust flame (two additive cones) + glow light
+    const fm = new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+    const fi = new THREE.MeshBasicMaterial({ color: 0xfff1c4, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.flame = new THREE.Group(); this.body.add(this.flame);
+    const outer = new THREE.Mesh(new THREE.ConeGeometry(1.3, 9, 20, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -4.6), fm);
+    const inner = new THREE.Mesh(new THREE.ConeGeometry(0.7, 5, 16, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -2.6), fi);
+    this.flame.add(outer, inner);
+    this.flame.visible = false;
+    this.flameLight = new THREE.PointLight(0xff9a40, 0, 120, 1.6); this.flameLight.position.set(0, 0, -3); this.body.add(this.flameLight);
+    this._lights(0.5, 0, 27, -0.5, 0);
+  }
+
+  _updateRocket(dt, input, auto, loc) {
+    const w = this.world, rk = this.rk;
+    const ground = w.groundAt(this.pos.x, this.pos.z);
+    const target = Math.max(this.autoSpeed, 250) * (input.space && !auto ? 1.6 : 1);
+    const cruise = 3200;
+    let firing = false;
+    if (rk.phase === 'pad' || rk.phase === 'landed') {
+      this.speed = 0; this.flightPitch = Math.PI / 2; this.y = ground;
+      rk.t += dt;
+      const go = auto ? rk.t > (rk.phase === 'pad' ? 1 : 4) : (input.throttle || input.space);
+      if (go) { rk.phase = 'count'; rk.t = 3.99; this.onEvent && this.onEvent('발사 3초 전'); }
+    } else if (rk.phase === 'count') {
+      const before = Math.ceil(rk.t);
+      rk.t -= dt;
+      const now = Math.ceil(rk.t);
+      if (now !== before && now > 0 && this.onEvent) this.onEvent(`${now}…`);
+      this.y = ground; this.speed = 0;
+      firing = rk.t < 1.5; // ignition before lift-off
+      if (rk.t <= 0) { rk.phase = 'fly'; this.onEvent && this.onEvent('발사! 🚀'); }
+    } else {
+      firing = true;
+      const alt = this.y - ground;
+      // throttle
+      const acc = 14 + target * 0.06;
+      this.speed += clamp(target - this.speed, -acc * dt, acc * dt);
+      let pitchIn = 0, turnIn = 0;
+      if (auto) {
+        // gravity turn: straight up, then pitch over towards the road heading and level off high above
+        const sp = Math.max(this.speed, 30);
+        const tgt = w.sample(loc.i + loc.t + (600 + sp * 4) / STEP, this.tmp);
+        const want = Math.atan2(tgt.x - this.pos.x, tgt.z - this.pos.z);
+        let err = want - this.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
+        turnIn = alt > 400 ? clamp(-err * 1.5, -1, 1) : 0;
+        const pT = alt < 400 ? Math.PI / 2 : clamp(Math.atan2(cruise - alt, 2500), -0.3, 0.8);
+        pitchIn = clamp((pT - this.flightPitch) * 1.5, -1, 1);
+      } else {
+        pitchIn = (input.throttle ? 1 : 0) - (input.back ? 1 : 0);
+        turnIn = input.steer;
+      }
+      this.flightPitch = clamp(this.flightPitch + pitchIn * 0.6 * dt, -Math.PI / 2, Math.PI / 2);
+      const level = Math.cos(this.flightPitch);
+      this.yaw -= turnIn * 0.7 * Math.max(level, 0.2) * dt;
+      const [fx, fz] = this.dir;
+      this.pos.x += fx * level * this.speed * dt;
+      this.pos.z += fz * level * this.speed * dt;
+      this.y += Math.sin(this.flightPitch) * this.speed * dt;
+      this.dist += this.speed * dt;
+      const g2 = w.groundAt(this.pos.x, this.pos.z);
+      if (this.y <= g2 + 0.5 && this.flightPitch < 0.3 && rk.phase === 'fly' && alt > -1) {
+        // touchdown: the booster lands upright (reusable!)
+        this.y = g2; this.speed = 0; rk.phase = 'landed'; rk.t = 0;
+        this.onEvent && this.onEvent('착륙 — 다시 발사하려면 W');
+      }
+      this.roll += dt * 0.25;
+    }
+    this.altitude = Math.max(0, this.y - w.groundAt(this.pos.x, this.pos.z));
+    this.airborne = this.altitude > 1;
+    this.pitch = this.flightPitch;
+    if (rk.phase !== 'fly') this.roll = lerp(this.roll, Math.round(this.roll / (Math.PI / 2)) * (Math.PI / 2), 1 - Math.exp(-2 * dt));
+    this.throttleIn = firing ? 1 : 0;
+    this.braking = false;
+    this.steer = 0;
+    // flame flicker + light
+    this.flame.visible = firing;
+    if (firing) { const f = 0.85 + Math.random() * 0.3; this.flame.scale.set(f, f, f * (1 + Math.min(1, this.speed / 300) * 0.6)); }
+    this.flameLight.intensity = firing ? 400 + Math.random() * 200 : 0;
+    this._updateSmoke(dt, firing, rk.phase === 'count');
+    this._finishPose(dt, 0, 0);
+  }
+
+  // exhaust smoke puffs (grow, drift, shrink away)
+  _updateSmoke(dt, firing, onPad) {
+    if (!this.smoke) {
+      const N = 220;
+      const m = new THREE.MeshStandardMaterial({ color: 0xd9d6d0, roughness: 1, transparent: true, opacity: 0.55, depthWrite: false });
+      this.smoke = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), m, N);
+      this.smoke.frustumCulled = false;
+      this.smokeP = Array.from({ length: N }, () => ({ x: 0, y: -9999, z: 0, vx: 0, vy: 0, vz: 0, age: 99, life: 1 }));
+      this.smokeI = 0; this.smokeT = 0;
+      this.group.parent.add(this.smoke);
+    }
+    this.smoke.visible = true;
+    this.smokeT -= dt;
+    if (firing && this.smokeT <= 0) {
+      this.smokeT = onPad ? 0.02 : 0.035;
+      const cp = Math.cos(this.flightPitch), sp = Math.sin(this.flightPitch);
+      const [fx, fz] = this.dir;
+      const bx = -fx * cp, by = -sp, bz = -fz * cp; // backwards along the rocket axis
+      for (let k = 0; k < 2; k++) {
+        const p = this.smokeP[this.smokeI]; this.smokeI = (this.smokeI + 1) % this.smokeP.length;
+        p.x = this.pos.x + bx * 7 + (Math.random() - 0.5) * 2; p.y = this.y + by * 7 + (Math.random() - 0.5) * 2; p.z = this.pos.z + bz * 7 + (Math.random() - 0.5) * 2;
+        const spread = onPad || this.altitude < 15 ? 14 : 2;
+        p.vx = (Math.random() - 0.5) * spread; p.vz = (Math.random() - 0.5) * spread; p.vy = onPad ? Math.random() * 2 : (Math.random() - 0.5) * 2;
+        if (onPad || this.altitude < 10) { p.y = Math.max(p.y, this.y + 0.5); }
+        p.age = 0; p.life = 4 + Math.random() * 3;
+      }
+    }
+    const m4 = new THREE.Matrix4();
+    this.smokeP.forEach((p, i) => {
+      p.age += dt;
+      const f = p.age / p.life;
+      if (f < 1) { p.x += p.vx * dt; p.y += p.vy * dt + 0.6 * dt; p.z += p.vz * dt; p.vx *= 0.98; p.vz *= 0.98; }
+      const sc = f < 1 ? (1.2 + f * 7) * Math.sin(Math.min(1, f * 1.3) * Math.PI * 0.95 + 0.15) : 0;
+      m4.makeScale(sc, sc, sc); m4.setPosition(p.x, p.y, p.z);
+      this.smoke.setMatrixAt(i, m4);
+    });
+    this.smoke.instanceMatrix.needsUpdate = true;
+  }
+
   // ---------------- airliner ----------------
   _buildJet() {
     const M = this.mats, P = this.paint, add = this._add.bind(this);
@@ -1050,6 +1204,7 @@ export class Car {
     if (this.model === 'plane' || this.model === 'jet') { this._updatePlane(dt, input, auto, loc); return; }
     if (this.model === 'heli') { this._updateHeli(dt, input, auto, loc); return; }
     if (this.model === 'boat' || this.model === 'sub') { this._updateBoat(dt, input, auto, loc); return; }
+    if (this.model === 'rocket') { this._updateRocket(dt, input, auto, loc); return; }
 
     let throttle = 0, brake = 0, steerIn = 0;
     if (auto) {
@@ -1206,7 +1361,7 @@ export class Car {
 
     // lights
     const n = night;
-    if (this.cabinMat) this.cabinMat.emissiveIntensity = this.model === 'jet' ? 0.15 + n * 2.5 : this.model === 'sub' ? 0.4 + n * 2 + (this.depth > 2 ? 1.5 : 0) : 0;
+    if (this.cabinMat) this.cabinMat.emissiveIntensity = this.model === 'jet' ? 0.15 + n * 2.5 : this.model === 'sub' ? 0.4 + n * 2 + (this.depth > 2 ? 1.5 : 0) : this.model === 'rocket' ? 0.5 + n * 2 : 0;
     if (this.beacon && (this.model === 'jet' || this.model === 'sub')) this.beacon.visible = (performance.now() % 1300) < 160;
     this.headMat.emissiveIntensity = 0.4 + n * 6;
     for (const b of this.beams) b.intensity = n * 220;

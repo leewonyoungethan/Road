@@ -201,6 +201,13 @@ export class Atmosphere {
     su.turbidity.value = lerp(SKY_PARAMS.turbidity, 16, oc);
     su.rayleigh.value = lerp(SKY_PARAMS.rayleigh, 0.35, oc);
     su.mieCoefficient.value = lerp(SKY_PARAMS.mieCoefficient, 0.002, oc);
+    // edge of space (rocket): the sky thins out to black and the stars come out
+    const space = this.space || 0;
+    if (space > 0) {
+      su.rayleigh.value *= 1 - space * 0.97;
+      su.mieCoefficient.value *= 1 - space * 0.9;
+      su.turbidity.value = lerp(su.turbidity.value, 0.6, space);
+    }
     this.sky.position.copy(camera.position);
 
     // sun / moon light
@@ -244,7 +251,7 @@ export class Atmosphere {
     this._fogTarget.lerp(this._grey, Math.min(1, oc * 1.1));
     if (w.snow > 0.01) this._fogTarget.multiplyScalar(1 + w.snow * 0.15);
     this.scene.fog.color.lerp(this._fogTarget, 1 - Math.exp(-dt * 4));
-    this.scene.fog.density = this.baseFog * w.fogMul;
+    this.scene.fog.density = this.baseFog * w.fogMul * (1 - 0.8 * (this.space || 0));
 
     // clouds & stars
     const cu = this.cloudMat.uniforms;
@@ -257,7 +264,7 @@ export class Atmosphere {
     this.clouds.position.x = camera.position.x; this.clouds.position.z = camera.position.z;
     cu.uCam.value.set(camera.position.x, camera.position.z);
     this.stars.position.copy(camera.position);
-    this.starMat.opacity = this.night * (1 - smoothstep(0.5, 0.85, w.cover));
+    this.starMat.opacity = Math.max(this.night * (1 - smoothstep(0.5, 0.85, w.cover)), (this.space || 0) * 0.9);
     this.light = day * (1 - oc * 0.6) + this.night * 0.08 + 0.04; // rough scene brightness for particles
   }
 }
