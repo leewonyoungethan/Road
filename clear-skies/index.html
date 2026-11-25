@@ -191,9 +191,9 @@
       <h1>맑은 하늘</h1>
       <p>그날 아침 미국 동부의 하늘은 구름 한 점 없이 맑았습니다. 이번에는 당신이 그 아침을 지킵니다.</p>
       <ul>
-        <li><b>1단계</b><span>공항 보안검색대에서 X선 화면을 보고 흉기를 찾아내세요.</span></li>
+        <li><b>1단계</b><span>쏟아지는 가방의 X선 화면에서 흉기를 직접 탭해 빼내세요.</span></li>
         <li><b>2단계</b><span>놓친 위협이 있다면, 관제 레이더에서 이상 신호를 보내는 항공기를 찾아 경보를 보내세요.</span></li>
-        <li><b>3단계</b><span>경보가 늦었다면, 기내에서 승객들과 함께 조종실로 향하는 납치범을 막으세요.</span></li>
+        <li><b>3단계</b><span>경보가 늦었다면, 기내 보안요원이 되어 납치범에게 돌진해 조종실 문을 지키세요.</span></li>
       </ul>
       <p class="dim">실제 사건을 바탕으로 한 가상의 이야기입니다. 희생자와 유가족을 기리는 마음으로 만들었습니다.</p>`,
       [{ label: '근무 시작', go: startGame }]);
@@ -218,161 +218,8 @@
   const SAFE = [['💻','노트북'],['📚','책'],['👕','셔츠'],['📱','휴대폰'],['🔑','열쇠'],['📷','카메라'],['👓','안경'],['🎧','헤드폰'],
     ['👛','지갑'],['☂️','우산'],['🍎','사과'],['🖊️','볼펜'],['🔦','손전등'],['🧦','양말'],['⏰','시계'],['🪥','칫솔'],['✏️','연필'],['🧸','인형'],['🥤','음료'],['💿','CD']];
   const DANGER = [['🔪','커터칼'],['🗡️','단검'],['🪒','면도칼']];
+  const KEYS = new Set();
 
-  function makeBags() {
-    const total = 20, bags = [];
-    for (let i = 0; i < total; i++) {
-      const n = 3 + Math.floor(Math.random() * 3);
-      const cells = shuffle([0,1,2,3,4,5]).slice(0, n + 1);
-      const items = shuffle(SAFE.slice()).slice(0, n).map((it, k) => ({ e: it[0], l: it[1], c: cells[k], r: rand(-.5, .5) }));
-      bags.push({ flight: FLIGHTS[i % 4].id, items, threat: false, spare: cells[n] });
-    }
-    // 6 threat bags; every flight gets at least one
-    const tf = shuffle(['AA11','UA175','AA77','UA93', pick(['AA11','UA175']), pick(['AA77','UA93'])]);
-    const idx = shuffle([...Array(total - 2)].map((_, i) => i + 2)).slice(0, 6);
-    idx.forEach((bi, k) => {
-      const b = bags[bi], d = pick(DANGER);
-      b.flight = tf[k]; b.threat = true;
-      b.items.push({ e: d[0], l: d[1], c: b.spare, r: rand(-1, 1), bad: true });
-      G.flights[tf[k]].threats++;
-    });
-    return bags;
-  }
-
-  function checkpointScene() {
-    const bags = makeBags();
-    let i = -1, bag = null, wait = 0.8, clock = 7 * 60 + 35;
-    const st = { caught: 0, missed: 0, falseAlarm: 0, ok: 0 };
-    let autoPass = 0;
-    header('1단계 · 공항 보안검색대', '위험물을 찾아내세요',
-      '가방이 X선 창을 지날 때 내용물을 확인하세요. 흉기(커터칼·단검·면도칼)가 보이면 <b>정밀검색</b>. 오경보가 3번 쌓이면 가방 3개가 검사 없이 지나갑니다. <kbd>←</kbd> 통과 · <kbd>→</kbd> 정밀검색');
-    function decide(inspect) {
-      if (!bag || bag.done) return;
-      if (bag.forced) { if (inspect) { toast('줄이 밀려서 이 가방은 검사할 수 없습니다', C.amber); sfx('bad'); } return; }
-      bag.done = true;
-      const bw = Math.min(260, W * 0.56), cx = Math.max(50, Math.min(W - 50, bag.x + bw / 2)), cy = H * 0.55;
-      if (inspect) {
-        bag.pull = 0;
-        if (bag.threat) {
-          st.caught++; G.combo++; const pts = 100 * comboMult(); G.score += pts; const d = bag.items.find(x => x.bad);
-          toast(`${d.l} 압수 · ${bag.flight} 탑승객 체포`, C.ok); pop(cx, cy - 50, `+${pts}`, C.ok); burst(cx, cy, C.ok, 26); flash(C.ok, .22); sfx('good');
-        } else {
-          st.falseAlarm++; G.combo = 0; G.score -= 20; wait += 0.9; toast('이상 없음 · 줄이 밀립니다', C.amber);
-          pop(cx, cy - 50, '-20', C.amber); shake(7); sfx('bad');
-          if (st.falseAlarm % 3 === 0) { autoPass = 3; setTimeout(() => toast('줄이 너무 길어요! 다음 가방 3개는 그냥 통과됩니다', C.alert), 700); }
-        }
-      } else {
-        if (bag.threat) {
-          st.missed++; G.combo = 0; G.flights[bag.flight].missed++;
-          toast(`놓쳤다! ${bag.flight}에 흉기 반입`, C.alert); flash(C.alert, .3); shake(12); sfx('lose');
-        } else { st.ok++; G.combo++; const pts = 10 * comboMult(); G.score += pts; pop(cx, cy - 50, `+${pts}`, C.sky); sfx('tick'); }
-        bag.fast = true;
-      }
-    }
-    controls([
-      { label: '통과 <kbd>←</kbd>', cls: 'ghost', go: () => decide(false) },
-      { label: '정밀검색 <kbd>→</kbd>', cls: 'danger', go: () => decide(true) },
-    ]);
-    function next() {
-      i++;
-      if (i >= bags.length) { finish(); return; }
-      const dur = Math.max(2.7, 4.6 - i * 0.1);
-      bag = { ...bags[i], x: -1, dur, t: 0, done: false, forced: autoPass > 0 }; if (autoPass > 0) autoPass--;
-    }
-    function finish() {
-      scene = idleScene(); controls([]);
-      FLIGHTS.forEach(f => { const s = G.flights[f.id]; if (s.missed > 0) s.status = 'boarded'; });
-      const boarded = FLIGHTS.filter(f => G.flights[f.id].status === 'boarded');
-      const list = FLIGHTS.map(f => {
-        const s = G.flights[f.id];
-        return `<li><b>${f.id}</b><span class="tag ${s.missed ? 't-bad' : 't-ok'}">${s.missed ? `흉기 ${s.missed}개 반입` : '위협 차단'}</span></li>`;
-      }).join('');
-      overlay(`
-        <div class="eyebrow">08:00 · 탑승 마감</div>
-        <h2>${boarded.length === 0 ? '모든 흉기를 지상에서 막았습니다' : `${boarded.length}개 항공편에 위협이 탑승했습니다`}</h2>
-        <p>압수 ${st.caught} · 놓침 ${st.missed} · 오경보 ${st.falseAlarm}</p>
-        <ul>${list}</ul>
-        <p class="dim">${boarded.length ? '아직 끝나지 않았습니다. 항공기가 이륙합니다. 관제 레이더로 이동하세요.' : '네 항공편 모두 평범한 비행을 시작합니다.'}</p>`,
-        [{ label: boarded.length ? '관제실로' : '결과 보기', go: () => { hideOverlay(); boarded.length ? (scene = radarScene()) : ending(); } }]);
-    }
-    const keyH = e => {
-      if (scene !== self) return;
-      if (e.key === 'ArrowLeft' || e.key === 'a') { e.preventDefault(); decide(false); }
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === ' ') { e.preventDefault(); decide(true); }
-    };
-    addEventListener('keydown', keyH);
-
-    const self = {
-      update(dt) {
-        clock += dt * 1.1; $('#clock').textContent = fmt(clock);
-        if (!bag) { wait -= dt; if (wait <= 0) next(); return; }
-        const bw = Math.min(260, W * 0.56);
-        const speed = (W + bw) / bag.dur * (bag.fast ? 3 : 1);
-        if (bag.pull !== undefined) { bag.pull += dt * 2.2; if (bag.pull >= 1) { bag = null; wait = Math.max(wait, 0.35); } return; }
-        if (bag.x < 0 && bag.t === 0) bag.x = -bw;
-        bag.t += dt; bag.x += speed * dt;
-        if (bag.x > W) { if (!bag.done) decide(false); bag = null; wait = Math.max(wait, 0.25); }
-      },
-      draw() {
-        ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
-        const bw = Math.min(260, W * 0.56), bh = Math.min(170, H * 0.42, bw * 0.66);
-        const beltY = H * 0.55, sw = bw * 1.18, sx = (W - sw) / 2, sy = beltY - bh / 2 - 22, sh = bh + 44;
-        // belt
-        ctx.fillStyle = '#0a1320'; ctx.fillRect(0, beltY + bh / 2 + 4, W, 16);
-        ctx.strokeStyle = C.line; ctx.lineWidth = 1;
-        const off = (performance.now() / 12) % 24;
-        for (let x = -24 + off; x < W; x += 24) { ctx.beginPath(); ctx.moveTo(x, beltY + bh / 2 + 4); ctx.lineTo(x + 8, beltY + bh / 2 + 20); ctx.stroke(); }
-        // scanner housing
-        ctx.fillStyle = '#071019'; ctx.fillRect(sx - 8, sy - 8, sw + 16, sh + 16);
-        ctx.fillStyle = '#0b2a34'; ctx.fillRect(sx, sy, sw, sh);
-        if (bag) {
-          const by = beltY - bh / 2 + (bag.pull ? bag.pull * bag.pull * H * 0.6 : 0);
-          // bag outside scanner
-          ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(sx + sw, sy, -sw, sh); ctx.clip('evenodd');
-          drawBagShell(bag.x, by, bw, bh, '#5a4a3a', '#3d3127'); ctx.restore();
-          // xray view inside scanner
-          ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
-          drawBagShell(bag.x, by, bw, bh, 'rgba(255,170,80,0.18)', 'rgba(255,170,80,0.6)');
-          drawItems(bag, bag.x, by, bw, bh);
-          ctx.restore();
-          // flight tag
-          ctx.fillStyle = C.amber; ctx.font = `600 12px ${MONO}`; ctx.textAlign = 'left';
-          if (bag.x + bw > 0 && bag.x < W) ctx.fillText(bag.flight + (bag.forced ? '  · 자동 통과' : ''), bag.x + 6, by - 8);
-        }
-        // scanner frame & scanline
-        ctx.strokeStyle = C.sky; ctx.globalAlpha = .5; ctx.strokeRect(sx, sy, sw, sh); ctx.globalAlpha = 1;
-        const sl = sy + ((performance.now() / 6) % sh);
-        ctx.fillStyle = 'rgba(159,208,245,0.10)'; ctx.fillRect(sx, sl, sw, 2);
-        ctx.fillStyle = C.muted; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'center';
-        ctx.fillText('X-RAY  ·  검색대 3번', W / 2, sy - 16);
-        // HUD
-        ctx.textAlign = 'left'; ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`;
-        ctx.fillText(`가방 ${Math.min(bags.length, i + 1)}/${bags.length}`, 12, H - 14);
-        ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 14);
-        if (G.combo >= 3) drawCombo(`콤보 ${G.combo}  ×${comboMult()}`, G.combo);
-        drawToasts();
-      },
-    };
-    return self;
-  }
-  function drawBagShell(x, y, w, h, fill, stroke) {
-    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
-    roundRect(x + w * 0.38, y - 14, w * 0.24, 20, 8); ctx.stroke();
-    roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke();
-  }
-  function drawItems(bag, x, y, w, h) {
-    const cw = w / 3, ch = h / 2, size = Math.min(cw, ch) * 0.52;
-    bag.items.forEach(it => {
-      const cx = x + cw * (it.c % 3 + 0.5), cy = y + ch * (Math.floor(it.c / 3) + 0.45);
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(it.r);
-      ctx.filter = 'grayscale(1) sepia(1) saturate(4) hue-rotate(150deg) brightness(1.15)';
-      ctx.font = `${size}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(it.e, 0, 0); ctx.restore();
-      ctx.filter = 'none';
-      ctx.fillStyle = 'rgba(180,230,240,0.75)'; ctx.font = `10px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText(it.l, cx, cy + size * 0.5 + 12);
-    });
-  }
   function roundRect(x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
@@ -382,9 +229,159 @@
     toasts.forEach((t, k) => {
       ctx.globalAlpha = Math.min(1, t.t * 2);
       ctx.font = `600 14px ${SANS}`; ctx.fillStyle = t.color;
-      ctx.fillText(t.text, W / 2, 26 + k * 22);
+      ctx.fillText(t.text, W / 2, 30 + k * 22);
     });
     ctx.globalAlpha = 1;
+  }
+
+  function checkpointScene() {
+    const DUR = 40;
+    let t = 0, stun = 0, rushShown = false;
+    const st = { caught: 0, missed: 0, wrong: 0 };
+    const bags = [];
+    header('1단계 · 공항 보안검색대', 'X선 화면에서 흉기를 탭하세요',
+      'X선 창 안의 <b>커터칼·단검·면도칼</b>을 직접 탭해서 빼내세요. 다른 물건을 누르면 잠깐 멈칫합니다. 금색 ★ 가방엔 흉기가 여러 개!');
+    controls([]);
+    const geo = () => {
+      const bh = Math.min(112, H * 0.24), bw = bh * 1.55, beltY = H * 0.5;
+      const sw = Math.min(W - 16, Math.max(bw * 1.7, W * 0.72));
+      return { bw, bh, beltY, sx: (W - sw) / 2, sw, sy: beltY - bh / 2 - 28, sh: bh + 56 };
+    };
+    function makeBag(x) {
+      const p = Math.min(0.55, 0.3 + t / DUR * 0.25);
+      const star = t > 6 && Math.random() < 0.12;
+      const nThreat = star ? 2 + (Math.random() < .5 ? 1 : 0) : (Math.random() < p ? 1 : 0);
+      const n = Math.min(6, Math.max(3 + (Math.random() * 3 | 0), nThreat + 2));
+      const cells = shuffle([0, 1, 2, 3, 4, 5]);
+      const items = [];
+      for (let k = 0; k < n; k++) {
+        const bad = k < nThreat, src = bad ? pick(DANGER) : pick(SAFE);
+        items.push({ e: src[0], l: src[1], c: cells[k], r: rand(-.7, .7), bad, gone: false });
+      }
+      bags.push({ x, flight: pick(FLIGHTS).id, items, star, checked: false });
+    }
+    function itemPos(b, it, g) { const cw = g.bw / 3, ch = g.bh / 2; return [b.x + cw * (it.c % 3 + .5), g.beltY - g.bh / 2 + ch * ((it.c / 3 | 0) + .45)]; }
+    function finish() {
+      scene = idleScene(); controls([]);
+      FLIGHTS.forEach(f => { const s = G.flights[f.id]; if (s.missed > 0) s.status = 'boarded'; });
+      const boarded = FLIGHTS.filter(f => G.flights[f.id].status === 'boarded');
+      const list = FLIGHTS.map(f => {
+        const s = G.flights[f.id];
+        return `<li><b>${f.id}</b><span class="tag ${s.missed ? 't-bad' : 't-ok'}">${s.missed ? `흉기 ${s.missed}개 반입` : '위협 차단'}</span></li>`;
+      }).join('');
+      sfx(boarded.length ? 'bad' : 'win');
+      overlay(`
+        <div class="eyebrow">08:00 · 탑승 마감</div>
+        <h2>${boarded.length === 0 ? '모든 흉기를 지상에서 막았습니다' : `${boarded.length}개 항공편에 위협이 탑승했습니다`}</h2>
+        <p>압수 ${st.caught} · 놓침 ${st.missed} · 잘못 누름 ${st.wrong} · 점수 ${G.score}</p>
+        <ul>${list}</ul>
+        <p class="dim">${boarded.length ? '아직 끝나지 않았습니다. 항공기가 이륙합니다. 관제 레이더로 이동하세요.' : '네 항공편 모두 평범한 비행을 시작합니다.'}</p>`,
+        [{ label: boarded.length ? '관제실로' : '결과 보기', go: () => { hideOverlay(); boarded.length ? (scene = radarScene()) : ending(); } }]);
+    }
+    const self = {
+      click(px, py) {
+        const g = geo();
+        if (px < g.sx || px > g.sx + g.sw || py < g.sy || py > g.sy + g.sh) return;
+        if (stun > 0) { sfx('bad'); return; }
+        let best = null, bb = null, bd = 32;
+        bags.forEach(b => b.items.forEach(it => {
+          if (it.gone) return; const [x, y] = itemPos(b, it, g);
+          if (x < g.sx || x > g.sx + g.sw) return;
+          const d = Math.hypot(x - px, y - py); if (d < bd) { bd = d; best = it; bb = b; }
+        }));
+        if (!best) return;
+        const [x, y] = itemPos(bb, best, g);
+        if (best.bad) {
+          best.gone = true; st.caught++; G.combo++;
+          const pts = (bb.star ? 150 : 100) * comboMult(); G.score += pts;
+          pop(x, y - 22, `+${pts}`, C.ok); burst(x, y, C.ok, 22); sfx('good');
+          if (G.combo % 5 === 0) { toast(`${G.combo} 연속 압수!`, C.amber); flash(C.amber, .15); }
+          if (bb.items.every(i => !i.bad || i.gone) && bb.star) { pop(W / 2, g.sy - 10, '★ 보너스 가방 클리어!', C.amber); }
+        } else {
+          st.wrong++; G.combo = 0; G.score = Math.max(0, G.score - 30); stun = 0.6;
+          pop(x, y - 22, `${best.l}? -30`, C.amber); shake(6); sfx('bad');
+        }
+      },
+      update(dt) {
+        t += dt; stun -= dt;
+        $('#clock').textContent = fmt(7 * 60 + 35 + Math.min(1, t / DUR) * 25);
+        const g = geo();
+        const v = 75 + Math.min(1, t / DUR) * 115;
+        if (!rushShown && t > DUR * 0.65) { rushShown = true; toast('러시 아워! 벨트가 빨라집니다', C.amber); sfx('alarm'); }
+        bags.forEach(b => b.x += v * dt);
+        const leftmost = bags.length ? Math.min(...bags.map(b => b.x)) : 1e9;
+        if (t < DUR && leftmost > 18) makeBag(-g.bw - rand(0, 40));
+        for (let k = bags.length - 1; k >= 0; k--) {
+          const b = bags[k];
+          if (!b.checked && b.x + g.bw / 6 > g.sx + g.sw) {
+            b.checked = true;
+            const left = b.items.filter(i => i.bad && !i.gone).length;
+            if (left) {
+              st.missed += left; G.combo = 0; G.flights[b.flight].missed += left;
+              toast(`놓쳤다! ${b.flight}에 흉기 반입`, C.alert); flash(C.alert, .3); shake(10); sfx('lose');
+            }
+          }
+          if (b.x > W + 10) bags.splice(k, 1);
+        }
+        if (t >= DUR && bags.every(b => b.checked)) finish();
+      },
+      draw() {
+        const g = geo();
+        ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
+        // time bar
+        ctx.fillStyle = C.line; ctx.fillRect(12, 10, W - 24, 4);
+        ctx.fillStyle = t > DUR * 0.65 ? C.alert : C.amber; ctx.fillRect(12, 10, (W - 24) * Math.max(0, 1 - t / DUR), 4);
+        // belt
+        const by0 = g.beltY + g.bh / 2 + 4;
+        ctx.fillStyle = '#0a1320'; ctx.fillRect(0, by0, W, 16);
+        ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+        const off = (performance.now() / 8) % 24;
+        for (let x = -24 + off; x < W; x += 24) { ctx.beginPath(); ctx.moveTo(x, by0); ctx.lineTo(x + 8, by0 + 16); ctx.stroke(); }
+        // scanner housing
+        ctx.fillStyle = '#071019'; ctx.fillRect(g.sx - 6, g.sy - 6, g.sw + 12, g.sh + 12);
+        ctx.fillStyle = '#0b2a34'; ctx.fillRect(g.sx, g.sy, g.sw, g.sh);
+        // bags outside scanner (opaque)
+        ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(g.sx + g.sw, g.sy, -g.sw, g.sh); ctx.clip('evenodd');
+        bags.forEach(b => drawShell(b.x, g.beltY - g.bh / 2, g.bw, g.bh, b.star ? '#6b5a2a' : '#5a4a3a', b.star ? C.amber : '#3d3127'));
+        ctx.restore();
+        // xray inside scanner
+        ctx.save(); ctx.beginPath(); ctx.rect(g.sx, g.sy, g.sw, g.sh); ctx.clip();
+        const size = Math.min(g.bw / 3, g.bh / 2) * 0.56;
+        bags.forEach(b => {
+          drawShell(b.x, g.beltY - g.bh / 2, g.bw, g.bh, 'rgba(255,170,80,0.16)', b.star ? C.amber : 'rgba(255,170,80,0.6)');
+          b.items.forEach(it => {
+            if (it.gone) return;
+            const [x, y] = itemPos(b, it, g);
+            ctx.save(); ctx.translate(x, y); ctx.rotate(it.r);
+            ctx.filter = 'grayscale(1) sepia(1) saturate(4) hue-rotate(150deg) brightness(1.15)';
+            ctx.font = `${size}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(it.e, 0, 0);
+            ctx.restore(); ctx.filter = 'none';
+            ctx.fillStyle = 'rgba(180,230,240,0.7)'; ctx.font = `10px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.fillText(it.l, x, y + size * 0.5 + 11);
+          });
+        });
+        ctx.restore();
+        // flight tags
+        ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'left';
+        bags.forEach(b => { ctx.fillStyle = b.star ? C.amber : C.muted; ctx.fillText((b.star ? '★ ' : '') + b.flight, b.x + 4, g.beltY - g.bh / 2 - 18); });
+        // frame + scanline
+        ctx.strokeStyle = C.sky; ctx.globalAlpha = .5; ctx.strokeRect(g.sx, g.sy, g.sw, g.sh); ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(159,208,245,0.12)'; ctx.fillRect(g.sx, g.sy + ((performance.now() / 5) % g.sh), g.sw, 2);
+        if (stun > 0) { ctx.fillStyle = 'rgba(240,181,74,0.15)'; ctx.fillRect(g.sx, g.sy, g.sw, g.sh); ctx.fillStyle = C.amber; ctx.font = `700 16px ${SANS}`; ctx.textAlign = 'center'; ctx.fillText('멈칫!', W / 2, g.sy + g.sh + 40); }
+        // HUD
+        ctx.textAlign = 'left'; ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`;
+        ctx.fillText(`압수 ${st.caught} · 놓침 ${st.missed}`, 12, H - 14);
+        ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 14);
+        if (G.combo >= 3) drawCombo(`콤보 ${G.combo}  ×${comboMult()}`, G.combo);
+        drawToasts();
+      },
+    };
+    return self;
+  }
+  function drawShell(x, y, w, h, fill, stroke) {
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2;
+    roundRect(x + w * 0.38, y - 12, w * 0.24, 18, 7); ctx.stroke();
+    roundRect(x, y, w, h, 10); ctx.fill(); ctx.stroke(); ctx.lineWidth = 1;
   }
 
   // ---------- STAGE 2: radar ----------
@@ -403,11 +400,11 @@
         turnAt: rand(4, DUR - 6), turnBy: rand(-1, 1), turned: false, target: false });
     });
     const boarded = shuffle(FLIGHTS.filter(f => G.flights[f.id].status === 'boarded'));
-    const slots = shuffle([3, 14, 25, 36]).slice(0, boarded.length).sort((a, b) => a - b);
+    const slots = shuffle([2, 8, 14, 20]).slice(0, boarded.length).sort((a, b) => a - b);
     boarded.forEach((f, k) => {
       const o = PORTS[f.org];
       planes.push({ cs: f.id, x: o[0] - 0.05, y: o[1] + 0.02, h: Math.PI + rand(-.25, .25), sp: 0.014, alt: 'FL310',
-        target: true, anomAt: slots[k] + rand(0, 3), anom: false, state: 'normal', left: 20, max: 20, dest: f.org === 'IAD' ? [0.52, 0.7] : [0.7, 0.42] });
+        target: true, anomAt: slots[k] + rand(0, 3), anom: false, state: 'normal', left: 14, max: 14, dest: f.org === 'IAD' ? [0.52, 0.7] : [0.7, 0.42] });
     });
     let cooldown = 0;
     function onClick(px, py) {
@@ -532,94 +529,183 @@
     const f = G.flights[id];
     overlay(`
       <div class="eyebrow">${id} · ${f.route}</div>
-      <h2>승객들이 일어섭니다</h2>
-      <p>납치범들이 통로를 따라 조종실 문으로 향합니다. 납치범을 빠르게 연타해 승객과 승무원이 그들을 붙잡도록 하세요. 한 명이라도 문에 닿으면 실패합니다.</p>`,
+      <h2>당신은 기내 보안요원입니다</h2>
+      <p>납치범들이 좌석에서 일어나 조종실 문으로 달려갑니다. 보안요원을 움직여 부딪히면 붙잡고, <b>돌진</b>으로 들이받으면 한 번에 제압합니다. 문이 부서지기 전에 모두 막으세요.</p>
+      <p class="dim">조작: 화면을 누른 채 끌기 또는 WASD·방향키 이동 · 두 번 탭 또는 Space 돌진 · 용기 게이지가 차면 E 또는 '승객 돌격'</p>`,
       [{ label: '막아라', cls: 'danger', go: () => { hideOverlay(); scene = cabinScene(id, () => cabinQueue(ids)); } }]);
   }
   function cabinScene(id, next) {
-    header('3단계 · 기내', `${id} 조종실을 지키세요`, '빨간 점(납치범)을 <b>연타</b>하세요. 탭할 때마다 주변 승객이 달려들어 밀어냅니다.');
-    controls([]);
-    let t = 0, over = false, clock = 9 * 60 + 2 + Math.random() * 20;
-    const n = 2 + (Math.random() < 0.5 ? 1 : 0) + (id === 'UA93' ? 0 : 1);
+    const fi = Math.max(0, FLIGHTS.findIndex(f => f.id === id));
+    header('3단계 · 기내', `${id} 조종실을 지키세요`, '끌어서 이동 · 두 번 탭/Space 돌진 · E 승객 돌격');
+    const TOTAL = 6 + fi;
+    let t = 0, over = false, spawned = 0, nextSpawn = 1.0, door = 100, courage = 0, lastTap = -9, bangT = 0, lastLabel = '';
+    const P = { x: W / 2, y: H * 0.35, tx: null, ty: null, held: false, dash: 0, cd: 0, dx: 0, dy: -1, r: 12 };
     const hij = [];
-    for (let k = 0; k < Math.min(4, n); k++) hij.push({ y: 0.58 + k * 0.08, side: (k % 2 ? 1 : -1) * 0.25, hp: 6, max: 6, hit: 0, sp: rand(0.045, 0.06), down: false });
-    const rush = [];
-    let lastTap = -9, taps = 0, danger = 0;
-    const geo = () => { const cw = Math.min(W * 0.86, 320); return { cw, x0: (W - cw) / 2, door: 56, rowTop: 84, rowBot: H - 24 }; };
-    function toY(v, g) { return g.door + v * (g.rowBot - g.door); }
+    const geo = () => { const cw = Math.min(W * 0.92, 340); return { cw, x0: (W - cw) / 2, door: 58, top: 76, bot: H - 34 }; };
+    function dash() {
+      if (P.cd > 0 || over) return;
+      P.dash = 0.26; P.cd = 1.3; sfx('hit'); shake(3);
+    }
+    function rally() {
+      if (courage < 1 || over) return;
+      courage = 0; flash(C.sky, .35); sfx('win'); toast('승객들이 일제히 일어섭니다!', C.sky);
+      hij.forEach(h => { if (!h.down) { h.stun = 2.6; h.y = Math.min(geo().bot, h.y + 60); burst(h.x, h.y, C.sky, 12); } });
+    }
+    controls([{ label: '돌진 <kbd>Space</kbd>', cls: 'danger', go: dash }, { label: '승객 돌격 0%', go: rally }]);
+    const rallyBtn = $('#controls').children[1];
+    function spawn() {
+      const g = geo(), side = Math.random() < .5 ? -1 : 1;
+      const y = rand(g.top + (g.bot - g.top) * 0.3, g.bot - 10);
+      const x = side < 0 ? rand(g.x0 + 18, W / 2 - 34) : rand(W / 2 + 34, g.x0 + g.cw - 18);
+      const roll = Math.random();
+      const type = spawned >= 2 && roll < 0.28 ? 'fast' : spawned >= 3 && roll > 0.8 ? 'big' : 'norm';
+      hij.push({ x, y, type, sp: type === 'fast' ? 100 : type === 'big' ? 46 : 64, need: type === 'big' ? 1.0 : 0.45,
+        prog: 0, stun: 0.5, down: false, r: type === 'big' ? 14 : 10, atDoor: false });
+      spawned++; burst(x, y, C.alert, 10); sfx('tick');
+    }
+    function subdue(h, byDash) {
+      h.down = true;
+      const pts = 80 + (byDash ? 50 : 0) + (h.type === 'big' ? 60 : h.type === 'fast' ? 30 : 0);
+      G.score += pts; courage = Math.min(1, courage + 0.34);
+      pop(h.x, h.y - 26, `${byDash ? '돌진 ' : ''}제압! +${pts}`, C.ok); burst(h.x, h.y, C.ok, 28); sfx('good');
+      if (byDash) { shake(6); flash(C.ok, .12); }
+    }
+    function end(win) {
+      over = true;
+      G.flights[id].status = win ? 'retaken' : 'lost';
+      if (win) { G.score += 200 + Math.round(door * 3); sfx('win'); } else { flash(C.alert, .45); shake(16); sfx('lose'); }
+      setTimeout(() => {
+        scene = idleScene(); controls([]);
+        overlay(win
+          ? `<div class="eyebrow">${id}</div><h2>납치범을 모두 제압했습니다</h2><p>조종실 문 내구도 ${Math.round(door)}% 남음 · 보너스 +${200 + Math.round(door * 3)}</p><p>조종사가 가장 가까운 공항으로 비상 착륙을 요청합니다.</p>`
+          : `<div class="eyebrow">${id}</div><h2>조종실 문이 부서졌습니다</h2><p>이 항공편은 지키지 못했습니다. 끝까지 맞선 승객과 승무원을 기억합니다.</p>`,
+          [{ label: '계속', go: () => { hideOverlay(); next(); } }]);
+      }, 800);
+    }
     const self = {
-      click(px, py) {
+      pdown(x, y) {
         if (over) return;
-        const g = geo();
-        let best = null, bd = 44;
-        hij.forEach(h => { if (h.down) return; const hx = W / 2 + h.side * 18, hy = toY(h.y, g); const d = Math.hypot(hx - px, hy - py); if (d < bd) { bd = d; best = h; } });
-        if (!best) return;
-        best.hp--; best.hit = 0.15; best.y = Math.min(0.95, best.y + 0.022);
-        const hx = W / 2 + best.side * 18, hy = toY(best.y, g);
-        rush.push({ x: hx + pick([-1, 1]) * rand(30, g.cw / 2 - 10), y: hy + rand(-30, 30), tx: hx, ty: hy, t: 0.3 });
-        taps = t - lastTap < 0.45 ? taps + 1 : 1; lastTap = t;
-        burst(hx, hy, C.sky, 6); shake(3); sfx('hit');
-        if (best.hp <= 0) { best.down = true; const pts = 60 + taps * 5; G.score += pts; pop(hx, hy - 24, `제압! +${pts}`, C.ok); burst(hx, hy, C.ok, 30); flash(C.ok, .18); sfx('good'); }
+        if (t - lastTap < 0.28) dash();
+        lastTap = t; P.held = true; P.tx = x; P.ty = y;
+      },
+      pmove(x, y) { if (P.held) { P.tx = x; P.ty = y; } },
+      pup() { P.held = false; P.tx = null; },
+      key(e) {
+        if (e.key === ' ') { e.preventDefault(); dash(); }
+        if (e.key === 'e' || e.key === 'E') rally();
       },
       update(dt) {
         if (over) return;
-        t += dt; clock += dt / 6; $('#clock').textContent = fmt(clock);
-        hij.forEach(h => { if (!h.down) h.y -= h.sp * dt * (t < 1 ? 0.3 : 1); h.hit -= dt; });
-        danger = Math.max(0, 1 - Math.min(...hij.filter(h => !h.down).map(h => h.y), 1) / 0.22);
-        rush.forEach(r => r.t -= dt); while (rush.length && rush[0].t <= 0) rush.shift();
-        if (hij.some(h => !h.down && h.y <= 0.02)) {
-          over = true; G.flights[id].status = 'lost'; flash(C.alert, .45); shake(16); sfx('lose');
-          setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>조종실 문이 열렸습니다</h2><p>이 항공편은 지키지 못했습니다. 끝까지 맞선 승객과 승무원을 기억합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
-        } else if (hij.every(h => h.down)) {
-          over = true; G.flights[id].status = 'retaken'; G.score += 200; sfx('win');
-          setTimeout(() => { scene = idleScene(); overlay(`<div class="eyebrow">${id}</div><h2>납치범을 제압했습니다</h2><p>승객과 승무원이 조종실을 지켜냈습니다. 조종사가 가장 가까운 공항으로 비상 착륙을 요청합니다.</p>`, [{ label: '계속', go: () => { hideOverlay(); next(); } }]); }, 700);
+        t += dt; P.cd -= dt; P.dash -= dt;
+        $('#clock').textContent = fmt(9 * 60 + 2 + fi * 7 + t / 8);
+        const g = geo();
+        // spawn
+        nextSpawn -= dt;
+        if (spawned < TOTAL && nextSpawn <= 0) {
+          spawn(); if (spawned >= 4 && spawned < TOTAL && Math.random() < 0.35) spawn();
+          nextSpawn = rand(1.5, 2.8) - fi * 0.12;
         }
+        // player movement
+        let mx = 0, my = 0;
+        if (KEYS.has('arrowleft') || KEYS.has('a')) mx -= 1;
+        if (KEYS.has('arrowright') || KEYS.has('d')) mx += 1;
+        if (KEYS.has('arrowup') || KEYS.has('w')) my -= 1;
+        if (KEYS.has('arrowdown') || KEYS.has('s')) my += 1;
+        if (!mx && !my && P.held && P.tx !== null) {
+          const ddx = P.tx - P.x, ddy = P.ty - P.y, d = Math.hypot(ddx, ddy);
+          if (d > 6) { mx = ddx / d; my = ddy / d; }
+        }
+        const ml = Math.hypot(mx, my);
+        if (ml) { P.dx = mx / ml; P.dy = my / ml; }
+        const spd = P.dash > 0 ? 560 : ml ? 185 : 0;
+        if (P.dash > 0) { P.x += P.dx * spd * dt; P.y += P.dy * spd * dt; }
+        else if (ml) { P.x += mx / ml * spd * dt; P.y += my / ml * spd * dt; }
+        P.x = Math.max(g.x0 + 14, Math.min(g.x0 + g.cw - 14, P.x)); P.y = Math.max(g.door + 14, Math.min(g.bot, P.y));
+        // hijackers
+        let banging = false;
+        hij.forEach(h => {
+          if (h.down) return;
+          const d = Math.hypot(h.x - P.x, h.y - P.y);
+          if (d < h.r + P.r + 2) {
+            if (P.dash > 0 && h.type !== 'big') { subdue(h, true); return; }
+            h.prog += dt * (P.dash > 0 ? 3 : 1); h.stun = Math.max(h.stun, 0.12);
+            if (h.prog >= h.need) { subdue(h, P.dash > 0); return; }
+          } else h.prog = Math.max(0, h.prog - dt * 0.5);
+          if (h.stun > 0) { h.stun -= dt; return; }
+          const ax = W / 2;
+          if (Math.abs(h.x - ax) > 3) { h.x += Math.sign(ax - h.x) * Math.min(Math.abs(ax - h.x), h.sp * 1.2 * dt); h.y -= h.sp * 0.25 * dt; }
+          else if (h.y > g.door + 14) h.y -= h.sp * dt;
+          if (h.y <= g.door + 16 && Math.abs(h.x - ax) < 6) {
+            h.y = g.door + 14; banging = true;
+            door -= dt * (h.type === 'big' ? 14 : 9);
+          }
+        });
+        // keep hijackers from stacking perfectly
+        for (let a = 0; a < hij.length; a++) for (let b = a + 1; b < hij.length; b++) {
+          const A = hij[a], B = hij[b]; if (A.down || B.down) continue;
+          const d = Math.hypot(A.x - B.x, A.y - B.y), m = A.r + B.r;
+          if (d < m && d > 0.01) { const push = (m - d) / 2; const ux = (A.x - B.x) / d, uy = (A.y - B.y) / d; A.y += uy * push; B.y -= uy * push; A.x += ux * push * .3; B.x -= ux * push * .3; }
+        }
+        if (banging) { bangT -= dt; if (bangT <= 0) { bangT = 0.45; sfx('hit'); shake(4); } }
+        // rally button label
+        const label = courage >= 1 ? '승객 돌격! <kbd>E</kbd>' : `승객 돌격 ${Math.round(courage * 100)}%`;
+        if (label !== lastLabel) { rallyBtn.innerHTML = label; rallyBtn.disabled = courage < 1; lastLabel = label; }
+        if (door <= 0) { door = 0; end(false); }
+        else if (spawned >= TOTAL && hij.every(h => h.down)) end(true);
       },
       draw() {
         const g = geo();
         ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
-        // fuselage
-        ctx.fillStyle = '#1b3150'; roundRect(g.x0, g.door - 30, g.cw, g.rowBot - g.door + 40, 40); ctx.fill();
-        // cockpit door
-        ctx.fillStyle = C.amber; ctx.fillRect(W / 2 - 22, g.door - 6, 44, 6);
-        ctx.fillStyle = C.muted; ctx.font = `600 11px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText('조종실', W / 2, g.door - 14);
-        // aisle
-        ctx.fillStyle = '#142640'; ctx.fillRect(W / 2 - 22, g.door, 44, g.rowBot - g.door);
-        // seats & passengers
-        const rows = Math.max(6, Math.floor((g.rowBot - g.rowTop) / 26));
-        const seatW = (g.cw / 2 - 22 - 14) / 3;
+        ctx.fillStyle = '#1b3150'; roundRect(g.x0, g.door - 28, g.cw, g.bot - g.door + 48, 40); ctx.fill();
+        ctx.fillStyle = '#142640'; ctx.fillRect(W / 2 - 20, g.door, 40, g.bot - g.door + 16);
+        // seats
+        const rows = Math.max(6, Math.floor((g.bot - g.top) / 28));
+        const seatW = (g.cw / 2 - 20 - 12) / 3;
         for (let r = 0; r < rows; r++) {
-          const y = g.rowTop + r * 26;
+          const y = g.top + r * 28;
           for (const s of [-1, 1]) for (let c = 0; c < 3; c++) {
-            const x = s < 0 ? g.x0 + 10 + c * seatW : W / 2 + 24 + c * seatW;
+            const x = s < 0 ? g.x0 + 8 + c * seatW : W / 2 + 22 + c * seatW;
             ctx.fillStyle = '#2a4466'; roundRect(x + 1, y, seatW - 3, 18, 4); ctx.fill();
             if ((r * 7 + c * 3 + (s > 0 ? 1 : 0)) % 4) { ctx.fillStyle = '#7fa8cf'; ctx.beginPath(); ctx.arc(x + seatW / 2 - 1, y + 9, 4, 0, Math.PI * 2); ctx.fill(); }
           }
         }
-        // rush lines
-        rush.forEach(r => { ctx.strokeStyle = C.sky; ctx.globalAlpha = r.t / 0.3; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(r.tx, r.ty); ctx.stroke(); });
-        ctx.globalAlpha = 1; ctx.lineWidth = 1;
+        // door + HP
+        const dc = door > 50 ? C.amber : C.alert;
+        ctx.fillStyle = dc; ctx.fillRect(W / 2 - 26, g.door - 6, 52, 7);
+        ctx.fillStyle = C.line; ctx.fillRect(W / 2 - 50, g.door - 22, 100, 6);
+        ctx.fillStyle = dc; ctx.fillRect(W / 2 - 50, g.door - 22, door, 6);
+        ctx.fillStyle = C.muted; ctx.font = `600 10px ${MONO}`; ctx.textAlign = 'center'; ctx.fillText(`조종실 문 ${Math.round(door)}%`, W / 2, g.door - 28);
         // hijackers
         hij.forEach(h => {
-          const hx = W / 2 + h.side * 18, hy = toY(h.y, g);
-          ctx.fillStyle = h.down ? C.muted : (h.hit > 0 ? '#fff' : C.alert);
-          ctx.beginPath(); ctx.arc(hx, hy, 9, 0, Math.PI * 2); ctx.fill();
-          if (!h.down) {
-            ctx.strokeStyle = C.alert; ctx.globalAlpha = 0.4 + 0.3 * Math.sin(t * 8); ctx.beginPath(); ctx.arc(hx, hy, 16, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
-            ctx.fillStyle = '#0006'; ctx.fillRect(hx - 14, hy + 13, 28, 4);
-            ctx.fillStyle = C.alert; ctx.fillRect(hx - 14, hy + 13, 28 * h.hp / h.max, 4);
-          } else {
-            ctx.fillStyle = C.sky; for (let a = 0; a < 4; a++) { ctx.beginPath(); ctx.arc(hx + Math.cos(a * 1.6) * 14, hy + Math.sin(a * 1.6) * 14, 4, 0, Math.PI * 2); ctx.fill(); }
+          if (h.down) {
+            ctx.fillStyle = C.muted; ctx.beginPath(); ctx.arc(h.x, h.y, h.r * 0.8, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = C.sky; for (let a = 0; a < 3; a++) { ctx.beginPath(); ctx.arc(h.x + Math.cos(a * 2.1) * (h.r + 4), h.y + Math.sin(a * 2.1) * (h.r + 4), 4, 0, Math.PI * 2); ctx.fill(); }
+            return;
           }
+          const col = h.type === 'fast' ? '#ff8a5c' : h.type === 'big' ? '#b8322a' : C.alert;
+          if (h.type === 'fast' && h.stun <= 0) { ctx.globalAlpha = .3; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(h.x, h.y + 10, h.r * .8, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+          ctx.fillStyle = h.stun > 0.3 ? '#fff' : col; ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2); ctx.fill();
+          if (h.type === 'big') { ctx.strokeStyle = C.alert; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(h.x, h.y, h.r + 4, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; }
+          if (h.prog > 0) { ctx.strokeStyle = C.ok; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(h.x, h.y, h.r + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, h.prog / h.need)); ctx.stroke(); ctx.lineWidth = 1; }
         });
-        if (danger > 0 && !over) {
+        // player
+        if (P.dash > 0) { ctx.fillStyle = 'rgba(159,208,245,0.35)'; for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.arc(P.x - P.dx * k * 10, P.y - P.dy * k * 10, P.r - k * 2, 0, Math.PI * 2); ctx.fill(); } }
+        ctx.fillStyle = C.sky; ctx.beginPath(); ctx.arc(P.x, P.y, P.r, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+        ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(P.x + P.dx * 5, P.y + P.dy * 5, 3, 0, Math.PI * 2); ctx.fill();
+        if (P.cd > 0) { ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.arc(P.x, P.y, P.r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - P.cd / 1.3)); ctx.stroke(); }
+        // danger vignette
+        const danger = door < 100 && hij.some(h => !h.down && h.y <= g.door + 20) ? 1 : 0;
+        if (danger && !over) {
           const gr = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75);
-          gr.addColorStop(0, 'rgba(232,89,79,0)'); gr.addColorStop(1, `rgba(232,89,79,${(0.25 + 0.2 * Math.sin(t * 12)) * danger})`);
+          gr.addColorStop(0, 'rgba(232,89,79,0)'); gr.addColorStop(1, `rgba(232,89,79,${0.3 + 0.2 * Math.sin(t * 12)})`);
           ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
-          ctx.fillStyle = C.alert; ctx.font = `700 16px ${SANS}`; ctx.textAlign = 'center'; ctx.fillText('문 앞까지 왔다!', W / 2, 30);
         }
-        if (taps >= 4 && t - lastTap < 0.6) drawCombo(`연타 ${taps}`, taps);
-        ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 6);
+        // HUD
+        const left = TOTAL - hij.filter(h => h.down).length;
+        ctx.fillStyle = C.muted; ctx.font = `12px ${MONO}`; ctx.textAlign = 'left'; ctx.fillText(`남은 납치범 ${left}`, 12, H - 10);
+        ctx.textAlign = 'right'; ctx.fillText(`점수 ${G.score}`, W - 12, H - 10);
+        ctx.fillStyle = C.line; ctx.fillRect(12, H - 30, 90, 5); ctx.fillStyle = courage >= 1 ? C.amber : C.sky; ctx.fillRect(12, H - 30, 90 * courage, 5);
         drawToasts();
       },
     };
@@ -654,10 +740,24 @@
   }
 
   // ---------- input & loop ----------
+  const ptr = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   cv.addEventListener('pointerdown', e => {
-    if (!scene || !scene.click) return;
-    const r = cv.getBoundingClientRect(); scene.click(e.clientX - r.left, e.clientY - r.top);
+    if (!scene) return;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    const [x, y] = ptr(e);
+    if (scene.click) scene.click(x, y);
+    if (scene.pdown) scene.pdown(x, y);
   });
+  cv.addEventListener('pointermove', e => { if (scene && scene.pmove) { const [x, y] = ptr(e); scene.pmove(x, y); } });
+  addEventListener('pointerup', () => { if (scene && scene.pup) scene.pup(); });
+  addEventListener('pointercancel', () => { if (scene && scene.pup) scene.pup(); });
+  addEventListener('keydown', e => {
+    KEYS.add(e.key.toLowerCase());
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(e.key.toLowerCase()) && $('#ov').hidden) e.preventDefault();
+    if (scene && scene.key && $('#ov').hidden) scene.key(e);
+  });
+  addEventListener('keyup', e => KEYS.delete(e.key.toLowerCase()));
+  addEventListener('blur', () => KEYS.clear());
   let last = performance.now();
   function loop(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
