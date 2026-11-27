@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Blockade</title>
+<meta name="description" content="지나간 자리에 벽을 남기며 상대를 가두는 2인 대결 게임" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;800&family=Noto+Sans+KR:wght@300;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #07090d;
+    --text: #f4f1ea;
+    --muted: rgba(244, 241, 234, 0.6);
+    --p1: #ffc76b;
+    --p2: #5fd4ff;
+    --glass: rgba(14, 18, 24, 0.72);
+    --glass-b: rgba(255, 255, 255, 0.14);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font-family: 'Inter', 'Noto Sans KR', system-ui, sans-serif; -webkit-user-select: none; user-select: none; touch-action: none; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 12px; }
+  #hud { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-weight: 700; }
+  .score { display: flex; align-items: center; gap: 10px; font-size: clamp(15px, 2.2vw, 20px); }
+  .score b { font-size: clamp(26px, 4vw, 40px); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .s1 { color: var(--p1); } .s2 { color: var(--p2); flex-direction: row-reverse; }
+  #mid { font-size: 12px; color: var(--muted); font-weight: 500; text-align: center; letter-spacing: .08em; text-transform: uppercase; }
+  #mid span { display: block; font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
+  canvas { display: block; border-radius: 10px; box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 20px 60px rgba(0,0,0,.6); }
+
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+    background: rgba(5,7,10,0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 5; transition: opacity .3s; }
+  #overlay.hide { opacity: 0; pointer-events: none; }
+  .card { width: min(520px, 100%); background: var(--glass); border: 1px solid var(--glass-b); border-radius: 18px; padding: 30px 28px; text-align: center; }
+  .card h1 { font-weight: 800; font-size: clamp(40px, 9vw, 64px); letter-spacing: -0.045em; line-height: 0.95; }
+  .card h1 i { font-style: normal; color: var(--p1); } .card h1 u { text-decoration: none; color: var(--p2); }
+  .card h2 { font-weight: 800; font-size: clamp(28px, 6vw, 40px); letter-spacing: -0.03em; }
+  .card p { margin-top: 12px; color: var(--muted); font-size: 14px; line-height: 1.7; font-weight: 300; }
+  .row { margin-top: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .label { margin-top: 18px; font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  button { padding: 10px 18px; border-radius: 999px; border: 1px solid var(--glass-b); background: rgba(255,255,255,0.07); color: var(--text);
+    font: 500 14px 'Noto Sans KR', sans-serif; cursor: pointer; transition: background .2s, border-color .2s; }
+  button:hover { background: rgba(255,255,255,0.16); }
+  button.on { border-color: var(--p1); background: rgba(255,199,107,0.16); color: var(--p1); }
+  button.go { margin-top: 24px; padding: 14px 40px; font-weight: 700; font-size: 16px; background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.35); }
+  .keys { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px; color: var(--muted); }
+  .keys div { padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.04); }
+  .keys b { display: block; margin-bottom: 4px; font-weight: 700; }
+  kbd { font-family: inherit; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--glass-b); color: var(--text); font-size: 12px; }
+  #back { position: fixed; top: 12px; left: 14px; font-size: 13px; color: var(--muted); text-decoration: none; z-index: 6; }
+  #back:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<a id="back" href="./">← Wander Road</a>
+<div id="wrap">
+  <div id="hud">
+    <div class="score s1"><b id="sc1">0</b><span id="n1">P1</span></div>
+    <div id="mid">라운드<span id="round">1</span></div>
+    <div class="score s2"><b id="sc2">0</b><span id="n2">CPU</span></div>
+  </div>
+  <canvas id="c"></canvas>
+</div>
+
+<div id="overlay">
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const COLS = 64, ROWS = 40, WIN = 5;
+  const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  const C1 = '#ffc76b', C2 = '#5fd4ff';
+
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const card = document.getElementById('card');
+  const $ = id => document.getElementById(id);
+
+  let cell = 12;
+  const opts = { mode: 'cpu', level: 'normal' };
+  try { Object.assign(opts, JSON.parse(localStorage.getItem('blockade-opts') || '{}')); } catch (e) {}
+
+  let grid, players, state = 'menu', score = [0, 0], round = 1, tickMs, acc = 0, last = 0, elapsed = 0, flash = 0;
+
+  // ---------- layout ----------
+  function resize() {
+    const hudH = 70;
+    const w = window.innerWidth - 32, h = window.innerHeight - 32 - hudH;
+    cell = Math.max(5, Math.floor(Math.min(w / COLS, h / ROWS)));
+    const dpr = window.devicePixelRatio || 1;
+    cvs.style.width = cell * COLS + 'px';
+    cvs.style.height = cell * ROWS + 'px';
+    cvs.width = cell * COLS * dpr;
+    cvs.height = cell * ROWS * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    $('hud').style.width = cell * COLS + 'px';
+    draw();
+  }
+
+  // ---------- sound ----------
+  let ac = null;
+  function beep(freq, dur, type = 'square', vol = 0.06, slide = 0) {
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur);
+    } catch (e) {}
+  }
+
+  // ---------- game setup ----------
+  function newRound() {
+    grid = new Uint8Array(COLS * ROWS);
+    const y = ROWS >> 1;
+    players = [
+      { x: 8, y, dir: 'right', queue: [], alive: true, id: 1, trail: [] },
+      { x: COLS - 9, y, dir: 'left', queue: [], alive: true, id: 2, trail: [] },
+    ];
+    for (const p of players) { grid[p.y * COLS + p.x] = p.id; p.trail.push([p.x, p.y]); }
+    tickMs = 95; acc = 0; elapsed = 0;
+    $('round').textContent = round;
+  }
+
+  const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' };
+  function steer(p, d) {
+    if (state !== 'play' && state !== 'countdown') return;
+    const lastDir = p.queue.length ? p.queue[p.queue.length - 1] : p.dir;
+    if (d === lastDir || d === opposite[lastDir] || p.queue.length >= 2) return;
+    p.queue.push(d);
+  }
+
+  const free = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && grid[y * COLS + x] === 0;
+
+  // ---------- CPU ----------
+  function floodCount(sx, sy, limit, blocked) {
+    if (!free(sx, sy)) return 0;
+    const seen = new Uint8Array(COLS * ROWS);
+    const stack = [sy * COLS + sx]; seen[stack[0]] = 1;
+    if (blocked) for (const b of blocked) seen[b] = 1;
+    let n = 0;
+    while (stack.length && n < limit) {
+      const i = stack.pop(); n++;
+      const x = i % COLS, y = (i / COLS) | 0;
+      const nb = [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]];
+      for (const [nx, ny] of nb) {
+        if (!free(nx, ny)) continue;
+        const j = ny * COLS + nx;
+        if (!seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    return n;
+  }
+
+  // cells I reach strictly before the opponent (Voronoi territory)
+  function territory(mx, my, ox, oy) {
+    const N = COLS * ROWS, dm = new Int16Array(N).fill(-1), dop = new Int16Array(N).fill(-1);
+    const bfs = (sx, sy, d) => {
+      const q = [sy * COLS + sx]; d[q[0]] = 0;
+      for (let h = 0; h < q.length; h++) {
+        const i = q[h], x = i % COLS, y = (i / COLS) | 0;
+        for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+          if (!free(nx, ny)) continue;
+          const j = ny * COLS + nx;
+          if (d[j] < 0) { d[j] = d[i] + 1; q.push(j); }
+        }
+      }
+    };
+    bfs(mx, my, dm); bfs(ox, oy, dop);
+    let mine = 0;
+    for (let i = 0; i < N; i++) if (dm[i] >= 0 && (dop[i] < 0 || dm[i] < dop[i])) mine++;
+    return mine;
+  }
+
+  function cpuThink(p, o) {
+    const cands = Object.keys(DIRS).filter(d => d !== opposite[p.dir]);
+    const lvl = opts.level;
+    if (lvl === 'easy' && Math.random() < 0.9) {
+      // keep going unless blocked; occasionally wander
+      const [dx, dy] = DIRS[p.dir];
+      if (free(p.x + dx, p.y + dy) && Math.random() > 0.04) return;
+    }
+    const oNext = Object.values(DIRS).map(([dx, dy]) => (o.y + dy) * COLS + (o.x + dx));
+    let best = null, bestScore = -Infinity;
+    for (const d of cands) {
+      const [dx, dy] = DIRS[d], nx = p.x + dx, ny = p.y + dy;
+      if (!free(nx, ny)) continue;
+      let s;
+      if (lvl === 'easy') s = floodCount(nx, ny, 60) + Math.random() * 30;
+      else {
+        const space = floodCount(nx, ny, COLS * ROWS, lvl === 'hard' ? null : oNext);
+        s = space * 4;
+        if (lvl === 'hard') {
+          grid[ny * COLS + nx] = 9;
+          s = space * 2 + territory(nx, ny, o.x, o.y) * 3;
+          grid[ny * COLS + nx] = 0;
+        }
+        if (oNext.includes(ny * COLS + nx)) s -= lvl === 'hard' ? 40 : 200; // risky head-on cell
+        if (d === p.dir) s += 2;
+        s += Math.random() * 1.5;
+      }
+      if (s > bestScore) { bestScore = s; best = d; }
+    }
+    if (best && best !== p.dir) p.queue = [best];
+  }
+
+  // ---------- tick ----------
+  function tick() {
+    const [a, b] = players;
+    if (opts.mode === 'cpu') cpuThink(b, a);
+    const next = players.map(p => {
+      if (p.queue.length) p.dir = p.queue.shift();
+      const [dx, dy] = DIRS[p.dir];
+      return [p.x + dx, p.y + dy];
+    });
+    const dead = next.map(([x, y]) => !free(x, y));
+    if (next[0][0] === next[1][0] && next[0][1] === next[1][1]) dead[0] = dead[1] = true;
+    players.forEach((p, i) => {
+      if (dead[i]) { p.alive = false; return; }
+      [p.x, p.y] = next[i];
+      grid[p.y * COLS + p.x] = p.id;
+      p.trail.push([p.x, p.y]);
+    });
+    beep(dead[0] || dead[1] ? 0 : 180 + (elapsed / 1000) * 3, 0.025, 'square', 0.012);
+    if (dead[0] || dead[1]) endRound(dead);
+  }
+
+  function endRound(dead) {
+    state = 'over'; flash = 1;
+    beep(220, 0.6, 'sawtooth', 0.09, -180);
+    let msg, color;
+    if (dead[0] && dead[1]) { msg = '무승부'; color = 'var(--text)'; }
+    else if (dead[1]) { score[0]++; msg = `${names()[0]} 승리`; color = C1; }
+    else { score[1]++; msg = `${names()[1]} 승리`; color = C2; }
+    updateScore();
+    const matchOver = score[0] >= WIN || score[1] >= WIN;
+    setTimeout(() => {
+      if (state !== 'over') return;
+      if (matchOver) {
+        const w = score[0] > score[1] ? 0 : 1;
+        beep(523, 0.15, 'triangle', 0.1); setTimeout(() => beep(659, 0.15, 'triangle', 0.1), 150); setTimeout(() => beep(784, 0.35, 'triangle', 0.1), 300);
+        showCard(`<h2 style="color:${w ? C2 : C1}">${names()[w]} 최종 우승!</h2>
+          <p>${score[0]} : ${score[1]}</p>
+          <button class="go" id="again">다시 하기</button><br><button style="margin-top:12px" id="menu">메뉴</button>`);
+        $('again').onclick = () => startMatch();
+        $('menu').onclick = () => showMenu();
+        state = 'matchover';
+      } else {
+        showCard(`<h2 style="color:${color}">${msg}</h2><p>${score[0]} : ${score[1]} · 먼저 ${WIN}승</p>
+          <button class="go" id="next">다음 라운드</button><p style="font-size:12px">Space / Enter / 탭</p>`);
+        $('next').onclick = nextRound;
+        state = 'roundover';
+      }
+    }, 900);
+  }
+
+  function nextRound() { round++; newRound(); countdown(); }
+
+  function names() { return opts.mode === 'cpu' ? ['나', 'CPU'] : ['P1', 'P2']; }
+  function updateScore() {
+    $('sc1').textContent = score[0]; $('sc2').textContent = score[1];
+    const n = names(); $('n1').textContent = n[0]; $('n2').textContent = n[1];
+  }
+
+  let cdTimer = null, cdValue = 0;
+  function countdown() {
+    hideCard(); state = 'countdown'; cdValue = 3; beep(440, 0.12, 'triangle', 0.08);
+    clearInterval(cdTimer);
+    cdTimer = setInterval(() => {
+      cdValue--;
+      if (cdValue > 0) beep(440, 0.12, 'triangle', 0.08);
+      else { clearInterval(cdTimer); beep(880, 0.2, 'triangle', 0.1); state = 'play'; last = performance.now(); acc = 0; }
+    }, 600);
+  }
+
+  function startMatch() { score = [0, 0]; round = 1; updateScore(); newRound(); countdown(); }
+
+  // ---------- render ----------
+  function draw() {
+    if (!grid) return;
+    const W = cell * COLS, H = cell * ROWS;
+    ctx.fillStyle = '#0a0d12'; ctx.fillRect(0, 0, W, H);
+    // grid dots
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let y = 1; y < ROWS; y++) for (let x = 1; x < COLS; x++) ctx.fillRect(x * cell - 0.5, y * cell - 0.5, 1, 1);
+    // trails
+    const g = Math.max(1, cell * 0.08);
+    for (const p of players) {
+      const col = p.id === 1 ? C1 : C2;
+      ctx.shadowColor = col; ctx.shadowBlur = cell * 0.9;
+      ctx.fillStyle = col; ctx.globalAlpha = 0.55;
+      for (let i = 0; i < p.trail.length - 1; i++) {
+        const [x, y] = p.trail[i], [x2, y2] = p.trail[i + 1];
+        // connect consecutive cells so the wall reads as one continuous line
+        const minx = Math.min(x, x2), miny = Math.min(y, y2);
+        ctx.fillRect(minx * cell + g, miny * cell + g, (Math.abs(x2 - x) + 1) * cell - 2 * g, (Math.abs(y2 - y) + 1) * cell - 2 * g);
+      }
+      ctx.globalAlpha = 1;
+      const [hx, hy] = p.trail[p.trail.length - 1];
+      ctx.fillStyle = p.alive ? '#fff' : '#ff4d5e';
+      ctx.shadowColor = p.alive ? col : '#ff4d5e'; ctx.shadowBlur = cell * 1.6;
+      ctx.fillRect(hx * cell + g * 0.5, hy * cell + g * 0.5, cell - g, cell - g);
+      if (!p.alive && flash > 0) {
+        ctx.globalAlpha = flash; ctx.strokeStyle = '#ff4d5e'; ctx.lineWidth = 2;
+        const r = cell * (1 + (1 - flash) * 4);
+        ctx.beginPath(); ctx.arc((hx + .5) * cell, (hy + .5) * cell, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.shadowBlur = 0;
+    if (state === 'countdown') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#fff'; ctx.font = `800 ${cell * 8}px Inter, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(cdValue, W / 2, H / 2);
+      // direction hints
+      ctx.font = `600 ${Math.max(11, cell * 1.2)}px 'Noto Sans KR', sans-serif`;
+      players.forEach(p => {
+        ctx.fillStyle = p.id === 1 ? C1 : C2;
+        ctx.fillText(names()[p.id - 1], (p.x + .5) * cell, (p.y - 2) * cell);
+      });
+    }
+  }
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+    if (state === 'play') {
+      const dt = Math.min(250, now - last); last = now;
+      acc += dt; elapsed += dt;
+      tickMs = Math.max(45, 95 - elapsed / 1000 * 1.6); // speeds up over time
+      while (acc >= tickMs && state === 'play') { acc -= tickMs; tick(); }
+    }
+    if (flash > 0) flash = Math.max(0, flash - 0.02);
+    draw();
+  }
+
+  // ---------- UI ----------
+  function showCard(html) { card.innerHTML = html; overlay.classList.remove('hide'); }
+  function hideCard() { overlay.classList.add('hide'); }
+
+  function showMenu() {
+    state = 'menu';
+    const b = (group, val, label) => `<button data-g="${group}" data-v="${val}" class="${opts[group] === val ? 'on' : ''}">${label}</button>`;
+    showCard(`<h1><i>Block</i><u>ade</u></h1>
+      <p>지나간 자리는 벽이 됩니다. 벽이나 꼬리에 부딪히면 패배.<br>상대를 가둬서 먼저 ${WIN}승을 거두세요.</p>
+      <div class="label">모드</div>
+      <div class="row">${b('mode', 'cpu', '1인 vs CPU')}${b('mode', 'pvp', '2인 대전')}</div>
+      <div class="label" id="lvlLabel">CPU 난이도</div>
+      <div class="row" id="lvlRow">${b('level', 'easy', '쉬움')}${b('level', 'normal', '보통')}${b('level', 'hard', '어려움')}</div>
+      <div class="keys">
+        <div><b style="color:${C1}">${opts.mode === 'cpu' ? '나' : 'P1'}</b><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>${opts.mode === 'cpu' ? ' 또는 <kbd>방향키</kbd>' : ''}<br>모바일: ${opts.mode === 'cpu' ? '화면 스와이프' : '왼쪽 절반 스와이프'}</div>
+        <div><b style="color:${C2}">${opts.mode === 'cpu' ? 'CPU' : 'P2'}</b>${opts.mode === 'cpu' ? '컴퓨터가 조종' : '<kbd>방향키</kbd><br>모바일: 오른쪽 절반 스와이프'}</div>
+      </div>
+      <button class="go" id="go">시작</button>`);
+    $('lvlLabel').style.display = $('lvlRow').style.display = opts.mode === 'cpu' ? '' : 'none';
+    card.querySelectorAll('button[data-g]').forEach(btn => btn.onclick = () => {
+      opts[btn.dataset.g] = btn.dataset.v;
+      try { localStorage.setItem('blockade-opts', JSON.stringify(opts)); } catch (e) {}
+      showMenu();
+    });
+    $('go').onclick = startMatch;
+    updateScore();
+  }
+
+  // keyboard
+  const K1 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' };
+  const KA = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+  window.addEventListener('keydown', e => {
+    if (KA[e.code] || e.code === 'Space') e.preventDefault();
+    if (e.repeat) return;
+    if (state === 'roundover' && (e.code === 'Space' || e.code === 'Enter')) return nextRound();
+    if (state === 'matchover' && (e.code === 'Space' || e.code === 'Enter')) return startMatch();
+    if (state === 'menu' && e.code === 'Enter') return startMatch();
+    if (e.code === 'Escape' && state !== 'menu') { clearInterval(cdTimer); return showMenu(); }
+    if (!players) return;
+    if (K1[e.code]) steer(players[0], K1[e.code]);
+    if (KA[e.code]) steer(opts.mode === 'cpu' ? players[0] : players[1], KA[e.code]);
+  });
+
+  // touch swipes (multi-touch so two people can share one screen)
+  const touches = new Map();
+  window.addEventListener('touchstart', e => {
+    if (e.target.closest('button, a')) return;
+    for (const t of e.changedTouches) touches.set(t.identifier, { x: t.clientX, y: t.clientY });
+    if (state === 'roundover') nextRound();
+    else if (state === 'play' || state === 'countdown') e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('touchmove', e => {
+    if (!players) return;
+    for (const t of e.changedTouches) {
+      const s = touches.get(t.identifier); if (!s) continue;
+      const dx = t.clientX - s.x, dy = t.clientY - s.y;
+      if (Math.hypot(dx, dy) < 22) continue;
+      const d = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+      const who = opts.mode === 'cpu' || s.x < window.innerWidth / 2 ? players[0] : players[1];
+      steer(who, d);
+      touches.set(t.identifier, { x: t.clientX, y: t.clientY }); // allow chained swipes
+    }
+    e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('touchend', e => { for (const t of e.changedTouches) touches.delete(t.identifier); });
+
+  window.addEventListener('resize', resize);
+  newRound();
+  resize();
+  showMenu();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

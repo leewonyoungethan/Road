@@ -40,3 +40,7 @@ npx serve .        # 또는: python3 -m http.server
 - `src/car.js` — 차량 모델과 아케이드 주행 물리, 자동 주행(Pure Pursuit + 곡률 기반 감속)
 - `src/audio.js` — 합성 엔진음 / 바람 소리
 - `src/main.js` — 렌더러, 포스트 프로세싱(블룸·ACES·비네트), 카메라, 입력, HUD
+
+## 미니 게임: Blockade
+
+`blockade.html` — 지나간 자리가 벽이 되는 2인 대결 게임. 1인 vs CPU(쉬움·보통·어려움) 또는 2인 대전(WASD / 방향키, 모바일은 스와이프), 먼저 5승.
